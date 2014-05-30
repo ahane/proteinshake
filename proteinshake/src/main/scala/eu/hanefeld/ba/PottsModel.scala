@@ -1,24 +1,23 @@
 package eu.hanefeld.ba
 
-//import scala.collection.mutable.ArrayBuffer
-//import cc.factorie.variable.{CategoricalDomain, Var}
-//import cc.factorie.model.{Model, Parameters, Factor, DotFamilyWithStatistics1, DotFamilyWithStatistics2}
-//import cc.factorie.la.{DenseTensor1, DenseTensor2}
+import scala.collection.mutable.ArrayBuffer
+import cc.factorie.variable.{CategoricalDomain, Var}
+import cc.factorie.model.{Model, Parameters, Factor, DotFamilyWithStatistics1, DotFamilyWithStatistics2}
+import cc.factorie.la.{DenseTensor1, DenseTensor2}
 
 /**
  * Created by alec on 3/22/14.
  */
-class PottsModel {
-/*(
-                  val domain: CategoricalDomain[Char],
-                  val localMasses: IndexedSeq[DenseTensor1],
-                  val pairwiseMasses: Map[(Int, Int), DenseTensor2])
+class PottsModel(
+      val domain: CategoricalDomain[Char],
+      val localMasses: IndexedSeq[DenseTensor1],
+      val pairwiseMasses: Map[(Int, Int), DenseTensor2])
   extends Model with Parameters {
 
   /* We initialize our 'families' which contain an inner class to create factors on the fly.
    * There is a 1:1 relationship between the factors in our model and the families.
-   * Wether or not two spins are connected is not defined in this class, it simply creates Families
-   * for all the tensors it has received in its constructor argumetn pairwiseMasses. Those are created in a
+   * Whether or not two spins are connected is not defined in this class, it simply creates Families
+   * for all the tensors it has received in its constructor argument pairwiseMasses. Those are created in a
    * factory method in the companion object below.
    */
   val localFamilies: IndexedSeq[DotFamilyWithStatistics1[Spin]] =
@@ -35,20 +34,47 @@ class PottsModel {
   def factors(variables: Iterable[Var]): Iterable[Factor] = {
     val factors = new ArrayBuffer[Factor]
 
-    //a simple cast of varriables from Var to Spin
-    val possibleNeighbours = variables collect {case s: Spin => s}
+    //a simple cast of variables from Var to Spin
+    val spins = variables collect {case s: Spin => s}
 
-    for(s <- possibleNeighbours){
-      val localFamily = localFamilies(s.i)
-      factors += localFamily.Factor(s)
+    for(s <- spins){
 
-      val existingConnections = pairwiseFamilies.keys.filter((k: (Int, Int)) => k._1 == s.i || k._2 == s.i)
-      for(k <- existingConnections) {
-        val pairwiseFamily = pairwiseFamilies(k)
-        factors += pairwiseFamily.Factor(s.cont(k._1), s.cont(k._2))
+      factors += initLocalFactor(s)
+
+      val connections = findConnections(s)
+      for(connection <- connections) {
+        factors += initPairwiseFactor(connection, s)
       }
     }
     factors
+  }
+  private def initLocalFactor(s: Spin): Factor = {
+    return localFamilies(s.i).Factor(s)
+  }
+
+  /**
+   * Inititalizes a Factor by looking at a Spin's container object and picking the Spins
+   * indicated by the connection tuple.
+   *
+   * @param connection A tuple representing the neighbours of Spin s
+   * @param s The Spin of which we want the factor
+   * @return A Factor representing the interaction strength of
+   */
+  private def initPairwiseFactor(connection: (Int, Int), s: Spin): Factor = {
+    val pairwiseFamily = pairwiseFamilies(connection)
+    val sequence = s.cont
+    //Either s_1 or s_2 will be the same as s.
+    val s_1: Spin = sequence(connection._1)
+    val s_2: Spin = sequence(connection._2)
+    return pairwiseFamily.Factor(s_1, s_2))
+  }
+
+  /**
+   * Returns a iterable of (Int, Int) tuples, that represent all connections of a given Spin s
+   * @param s
+   */
+  private def findConnections(s: Spin): Iterable[(Int, Int)] = {
+    return pairwiseFamilies.keys.filter((k: (Int, Int)) => k._1 == s.i || k._2 == s.i)
   }
 }
 
@@ -141,5 +167,5 @@ object PottsModel {
     }
     model
   }
-*/
+
 }
