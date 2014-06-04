@@ -49,7 +49,8 @@ class PottsModel(
     factors
   }
   private def initLocalFactor(s: Spin): Factor = {
-    return localFamilies(s.i).Factor(s)
+    val localFamily = localFamilies(s.i)
+    return localFamily.Factor(s)
   }
 
   /**
@@ -62,11 +63,10 @@ class PottsModel(
    */
   private def initPairwiseFactor(connection: (Int, Int), s: Spin): Factor = {
     val pairwiseFamily = pairwiseFamilies(connection)
-    val sequence = s.cont
     //Either s_1 or s_2 will be the same as s.
-    val s_1: Spin = sequence(connection._1)
-    val s_2: Spin = sequence(connection._2)
-    return pairwiseFamily.Factor(s_1, s_2))
+    val s_1: Spin = s.sequence(connection._1)
+    val s_2: Spin = s.sequence(connection._2)
+    return pairwiseFamily.Factor(s_1, s_2)
   }
 
   /**
@@ -80,13 +80,15 @@ class PottsModel(
 
 object PottsModel {
 
-  /* If we receive pairwises and local masses we create initialize the model. They might come from a synthetic model generator
+  /**
+   * If we receive pairwise and local masses we create initialize the model. They might come from a synthetic model generator
    * or from the other factory methods below.
    */
   def apply(localMasses: IndexedSeq[DenseTensor1], pairwiseMasses: Map[(Int, Int), DenseTensor2], domain: CategoricalDomain[Char]): PottsModel = {
     new PottsModel(domain, localMasses, pairwiseMasses)
   }
-  /* If just the number of variables and the domain is supplied, we create a completely connected model with weights initialized to zero.
+  /**
+   * If just the number of variables and the domain is supplied, we create a completely connected model with weights initialized to zero.
    */
   def apply(numSites: Int, domain: CategoricalDomain[Char]): PottsModel = {
     val localMasses = for(i <- 0 until numSites) yield new DenseTensor1(domain.size)
@@ -96,7 +98,8 @@ object PottsModel {
   }
 
   /* This factory initializes a completely connected model, but initializes the local masses to be the the logarithms of
-   * the local freuencies counted in a dataset. We add a pseudocount to deter limited sampling size effects.
+   * the local freuencies counted in a dataset. We add a pseudocount to deter limited sampling size effects.\
+   * DEPRECATED?
    */
   def logFreqsAsLocalWeights(samples: Seq[IndexedSeq[Spin]], domain: CategoricalDomain[Char]): PottsModel = {
     val PSEUDOCOUNT = 2.
@@ -125,7 +128,7 @@ object PottsModel {
   }
 
 
-  /* We here abuse the tensor/factor infrastructure to collecte empirical frequencies from a dataset.
+  /* We here abuse the tensor/factor infrastructure to collect empirical frequencies from a dataset.
    * The "weights" of the this model are then used to estimate mutual information in the Experiment class.
    */
   def frequenciesAsWeights(samples: Seq[IndexedSeq[Spin]], domain: CategoricalDomain[Char]): PottsModel = {
@@ -151,6 +154,7 @@ object PottsModel {
       weightTensor *= 1./(numSamples + (domain.size * PSEUDOCOUNT))
       for(i <- 0 until weightTensor.length) weightTensor.update(i, weightTensor(i))
     }
+
     for ((family, i) <- model.localFamilies.zipWithIndex) {
       val weightTensor = model.parameters(family.weights)
 

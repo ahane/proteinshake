@@ -1,39 +1,72 @@
 package eu.hanefeld.ba
 
-/*import cc.factorie.variable.CategoricalDomain
+import cc.factorie.variable.CategoricalDomain
 import eu.hanefeld.ba.{PottsModel, WeightGenerator, Spin}
+import eu.hanefeld.ba.Spin.SpinSeq
 import cc.factorie.infer.GibbsSampler
-import scala.collection.mutable.ArrayBuffer*/
-
+import eu.hanefeld.ba.Types._
+import org.json4s.JsonDSL._
+import org.json4s.jackson.JsonMethods._
+import scala.collection.mutable.ArrayBuffer
+//import play.api.libs.json.Json
 /**
  * Created by alec on 3/23/14.
  */
-class MSAGenerator {
-/*val numSites: Int,
-val domain: CategoricalDomain[Char],
-val edgeProbability: Double,
-val numSamples: Double = 5000,
-val burnIn: Int = 1000,
-val thinning: Int = 20)
-(implicit val random: scala.util.Random) {
+class MSAGenerator(
+  val numSites: Int,
+  val domain: SpinDomain,
+  val name: String,
+  val edgeProbability: Double,
+  //val numSamples: Double = 5000,
+  val burnInCount: Int,
+  val thinningCount: Int) {
+  implicit val random = new scala.util.Random(0)
 
-  val weightGenerator = WeightGenerator(domain, numSites, edgeProbability, false)
-  val localWeights = weightGenerator.localMasses
-  val pairwiseWeights = weightGenerator.pairwiseMasses
+  val weightGenerator = WeightGenerator(domain, numSites, edgeProbability)
+  val localWeights = weightGenerator.generateLocalMasses
+  val pairwiseWeights = weightGenerator.generatePairwiseMasses
 
   val model = PottsModel(localWeights, pairwiseWeights, domain)
 
-  val trueDistances = Distances(model)
+  val trueDistances = ConnectionStrengths(model, "bert")
 
-  def samples: Seq[Spin] = {
-    val sampler = new GibbsSampler(model)
-    val samples = new ArrayBuffer[Spin]
-    sampler.processAll(variables, burnIn)
-    for(i <- 0 until N) {
-      sampler.processAll(variables, thinning)
-      strings += variables.map(_.value).mkString
-    }
-    strings
-  }*/
+  val sampler = new GibbsSampler(model)
+  val spinSequence: SpinSeq = Spin.makeSequence(numSites, domain)
+  //we draw burnInCount times and disregard the values
+  sampler.processAll(spinSequence, burnInCount)
 
+  var sequences: IndexedSeq[String] = null
+  var sequencesGenerated: Boolean = false
+  def generateSequenceStrings(numSamples: Int = 2000): Unit = {
+    sequencesGenerated = true
+    sequences = for(i <- 0 until numSamples) yield drawString
+  }
+
+
+  def getJSON: String = {
+    if(!sequencesGenerated) { this.generateSequenceStrings() }
+    val distances = trueDistances.getJSON
+    val json = ("MSA" ->
+                  ("sequences" -> sequences) ~
+                  ("name" -> name) ~
+                  ("distances" -> distances))
+    return pretty(render(json))
+  }
+
+  private def drawString: String = {
+    //we sample thinningCount times first
+    sampler.processAll(spinSequence, thinningCount)
+    return spinSequence.map(_.value).mkString
+  }
+}
+
+object MSAGenerator {
+  def apply( numSites: Int,
+             domain: SpinDomain,
+             name: String,
+             edgeProbability: Double = 0.3,
+             burnInCount: Int = 1000,
+             thinningCount: Int = 20 ): MSAGenerator = {
+    new MSAGenerator(numSites: Int, domain, name, edgeProbability, burnInCount, thinningCount)
+  }
 }
