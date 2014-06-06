@@ -30,4 +30,6 @@ object MSA {
     //val spinSequences = sequences.map(stringSequence => Spin.makeSequence(stringSequence, domain))
     MSA(sequences, trueDistances, domain)
   }
+
+  //def apply(json: JObject): MSA
 }

@@ -41,22 +41,25 @@ class MSAGenerator(
     sequencesGenerated = true
     sequences = for(i <- 0 until numSamples) yield drawString
   }
+  private def drawString: String = {
+    //we sample thinningCount times first
+    sampler.processAll(spinSequence, thinningCount)
+    return spinSequence.map(_.value).mkString
+  }
+
+
+
 
 
   def getJSON: String = {
     if(!sequencesGenerated) { this.generateSequenceStrings() }
     val distances = trueDistances.getJSON
     val json = ("MSA" ->
-                  ("sequences" -> sequences) ~
-                  ("name" -> name) ~
-                  ("distances" -> distances))
+      ("sequences" -> sequences) ~
+        ("name" -> name) ~
+        ("distances" -> distances) ~
+        ("edge-prob" -> edgeProbability))
     return pretty(render(json))
-  }
-
-  private def drawString: String = {
-    //we sample thinningCount times first
-    sampler.processAll(spinSequence, thinningCount)
-    return spinSequence.map(_.value).mkString
   }
 }
 

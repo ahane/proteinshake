@@ -19,7 +19,7 @@ class WeightGenerator(
   val localMean: Double = 0,
   val localVariance: Double = 1.0,
   val pairwiseMean: Double = 0,
-  val pairwiseVariance: Double = 3.0) {
+  val pairwiseVariance: Double = 1.0) {
 
   implicit val random = new scala.util.Random(0)
 
