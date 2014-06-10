@@ -3,26 +3,54 @@ import cc.factorie.variable.CategoricalDomain
 import cc.factorie.util.CmdOptions
 import eu.hanefeld.ba.Types._
 import scala.concurrent.Future
+import org.json4s.jackson.JsonMethods._
+import org.json4s._
 
 
-object App {
 
-  val aminoDomain: SpinDomain = new CategoricalDomain[Char](List('a', 'b', 'c'))
-  val MSAGen = MSAGenerator(20, aminoDomain, "test1")
+object ProteinShake {
+
   def main(args : Array[String]) {
-//  options.parse(args)
+    implicit val formats = DefaultFormats
+    options.parse(args)
+
+    val msaFoldername = options.dataPath.value
+    val msaFilename = options.msa.value
+    val path = msaFoldername + msaFilename
+    val json = parse(readFromFile(path))
+    val msaJson = json.extract[MSAJson]
+    val msa = MSA(msaJson)
+
+    val model = PottsModel.logFreqsAsLocalWeights(msa)
+
+    print(model.pairwiseFamilies.keys)
+
 //  import options._
 //  println(numIterations.value)
 //  println(l1.value)
 //  println(l1.value.toInt*numIterations.value.toInt)
 //
-    println(hyperparameterTuning.optimalParameters)
+    //println(hyperparameterTuning.optimalParameters)
   }
 
+  private def readFromFile(filepath: String): String = {
+    import scalax.io._
+    try {
+      val in: Input = Resource.fromFile(filepath)
+      return in.string
+    }
+    catch {
+      case e: Exception => println("Failed to locate MSA data file");
+      return None.asInstanceOf[String]
+    }
+
+  }
 }
 
 object options extends CmdOptions {
   //
+  val dataPath = new CmdOption("msa-folder", "data/real/", "STRING", "Path to MSA files")
+  val msa = new CmdOption("msa-file", "PF00006.json", "STRING", "Name of msa.json file that should be used.")
   val numIterations = new CmdOption("iterations", 3, "INT", "Number of iterations of the SGD algorithm")
   val l1 = new CmdOption("learning-rate", 0.4, "DOUBLE", "Learning rate l1")
 }

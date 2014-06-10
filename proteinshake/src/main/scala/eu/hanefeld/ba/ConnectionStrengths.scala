@@ -7,7 +7,6 @@ import org.json4s.jackson.JsonMethods.{render}
 import scala.collection.mutable.ArrayBuffer
 import org.json4s.JsonAST._
 import org.json4s.Merge
-import org.json4s.JsonAST.JDouble
 
 /**
  * Created by alec on 3/23/14.
@@ -15,21 +14,40 @@ import org.json4s.JsonAST.JDouble
 class ConnectionStrengths(val strengths: Map[(Int, Int), Double], val sourceName: String, val source: Any = null){
   def apply(key: (Int, Int)): Double = strengths(key)
   val sortedByStrength = strengths.toList.sortBy(_._2).reverse
-  def getJSON: JObject = {
+
+  def getPositivesAsJSON: JObject = {
     val jsons = new ArrayBuffer[JObject]
     for (connection <-strengths.keys) {
       val first = connection._1.toString
       val second = connection._2.toString
-      val strength = JDouble(strengths(connection))
+      val isConnection = JBool(strengths(connection) > 0.0)
       val jobject = JObject(
                         JField(first,
-                               JObject( JField(second, strength) :: Nil ))
+                               JObject( JField(second, isConnection) :: Nil ))
                          :: Nil)
       jsons.append(jobject)
     }
     val jsonMerged = jsons.reduceLeft((a: JObject, b: JObject) => Merge.merge(a, b))
     jsonMerged
   }
+
+  //deprecated
+  def getJSONFloat: JObject = {
+    val jsons = new ArrayBuffer[JObject]
+    for (connection <-strengths.keys) {
+      val first = connection._1.toString
+      val second = connection._2.toString
+      val strength = JDouble(strengths(connection))
+      val jobject = JObject(
+        JField(first,
+          JObject( JField(second, strength) :: Nil ))
+          :: Nil)
+      jsons.append(jobject)
+    }
+    val jsonMerged = jsons.reduceLeft((a: JObject, b: JObject) => Merge.merge(a, b))
+    jsonMerged
+  }
+
 }
 object ConnectionStrengths{
 

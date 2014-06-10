@@ -2,7 +2,6 @@ package eu.hanefeld.ba
 
 import cc.factorie.variable.CategoricalDomain
 import eu.hanefeld.ba.{PottsModel, WeightGenerator, Spin}
-import eu.hanefeld.ba.Spin.SpinSeq
 import cc.factorie.infer.GibbsSampler
 import eu.hanefeld.ba.Types._
 import org.json4s.JsonDSL._
@@ -31,7 +30,7 @@ class MSAGenerator(
   val trueDistances = ConnectionStrengths(model, "bert")
 
   val sampler = new GibbsSampler(model)
-  val spinSequence: SpinSeq = Spin.makeSequence(numSites, domain)
+  val spinSequence: SpinSequence = Spin.makeSequence(numSites, domain)
   //we draw burnInCount times and disregard the values
   sampler.processAll(spinSequence, burnInCount)
 
@@ -53,11 +52,11 @@ class MSAGenerator(
 
   def getJSON: String = {
     if(!sequencesGenerated) { this.generateSequenceStrings() }
-    val distances = trueDistances.getJSON
+    val connections = trueDistances.getPositivesAsJSON
     val json = ("MSA" ->
       ("sequences" -> sequences) ~
         ("name" -> name) ~
-        ("distances" -> distances) ~
+        ("connections" -> connections) ~
         ("edge-prob" -> edgeProbability))
     return pretty(render(json))
   }

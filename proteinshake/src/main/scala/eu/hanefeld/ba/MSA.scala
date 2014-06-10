@@ -7,29 +7,46 @@ import cc.factorie.variable.CategoricalDomain
  * This is the highest abstraction for our data and holds
  *
  */
-class MSA(
-  //a collection of SpinSequences
-  val sequences: IndexedSeq[SpinSequence],
+case class MSAJson(
+            sequences: List[String],
+            connections: List[String],
+            name: String)
 
-  //it mainly stores the true distances
-  val trueDistances: ConnectionStrengths,
-  //and a domain
-  val domain: SpinDomain)
+class MSA(
+  val sequences: List[SpinSequence],
+  val connections: Set[(Int, Int)],
+  val domain: SpinDomain,
+  val name: String) {
+
+  def printmama(): Unit = {print(connections)}
+}
+
 
 object MSA {
-  def apply(sequences: IndexedSeq[String], trueDistances: ConnectionStrengths, domain: SpinDomain): MSA = {
-    assert(sequences.forall(_.length == sequences(0).length), "Samples must all be of same length.")
-    val spinSequences = sequences.map(stringSequence => Spin.makeSequence(stringSequence, domain))
-    new MSA(spinSequences, trueDistances, domain)
-  }
+  def apply(jsonMSA: MSAJson): MSA = {
 
-  def apply(sequences: IndexedSeq[String], trueDistances: ConnectionStrengths): MSA = {
-    assert(sequences.forall(_.length == sequences(0).length), "Samples must all be of same length.")
-    val domain: SpinDomain = new CategoricalDomain[SpinValue]
-    for(stringSequence <- sequences; spinChar <- stringSequence) domain += spinChar
-    //val spinSequences = sequences.map(stringSequence => Spin.makeSequence(stringSequence, domain))
-    MSA(sequences, trueDistances, domain)
+    val domain = extractDomain(jsonMSA.connections)
+    val spinSequences = stringSeqToSpinSeq(jsonMSA.sequences, domain)
+    val connectionsSet = extractConnections(jsonMSA.connections)
+
+    new MSA(spinSequences, connectionsSet, domain, jsonMSA.name)
   }
 
   //def apply(json: JObject): MSA
+  def extractConnections(connectionsStrings: List[String]): Set[(Int, Int)] = {
+    val connections = for(string <- connectionsStrings) yield (string.split(";")(0).toInt, string.split(";")(1).toInt)
+    connections.toSet
+  }
+
+  def stringSeqToSpinSeq(stringSequences: List[String], domain: SpinDomain): List[SpinSequence] = {
+    val s = stringSequences.map(stringSequence => Spin.makeSequence(stringSequence, domain))
+    s
+  }
+
+  def extractDomain(stringSequences: List[String]): SpinDomain = {
+    val domain = new CategoricalDomain[SpinValue]
+    for(stringSequence <- stringSequences; spinChar <- stringSequence) domain += spinChar
+    domain
+  }
+
 }
