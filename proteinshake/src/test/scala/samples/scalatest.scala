@@ -34,52 +34,6 @@ import cc.factorie.variable.CategoricalDomain
 import eu.hanefeld.ba.{MututalInformationConnectionPredictor, PottsModel, MSA, Spin}
 import cc.factorie.la.Tensor
 
-class StackSuite extends Assertions {
-
-  @Test def stackShouldPopValuesIinLastInFirstOutOrder() {
-    val stack = new Stack[Int]
-    stack.push(1)
-    stack.push(2)
-    assert(stack.pop() === 2)
-    assert(stack.pop() === 1)
-  }
-
-  @Test def stackShouldThrowNoSuchElementExceptionIfAnEmptyStackIsPopped() {
-    val emptyStack = new Stack[String]
-    intercept[NoSuchElementException] {
-      emptyStack.pop()
-    }
-  }
-}
-
-/*
-Here's an example of a FunSuite with ShouldMatchers mixed in:
-*/
-import org.scalatest.FunSuite
-import org.scalatest.matchers.ShouldMatchers
-
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-
-//@RunWith(classOf[JUnitRunner])
-class ListSuite extends FunSuite with ShouldMatchers {
-
-  test("An empty list should be empty") {
-    List() should be ('empty)
-    Nil should be ('empty)
-  }
-
-  test("A non-empty list should not be empty") {
-    List(1, 2, 3) should not be ('empty)
-    List("fee", "fie", "foe", "fum") should not be ('empty)
-  }
-
-  test("A list's length should equal the number of elements it contains") {
-    List() should have length (0)
-    List(1, 2) should have length (2)
-    List("fee", "fie", "foe", "fum") should have length (4)
-  }
-}
 
 /*
 ScalaTest also supports the behavior-driven development style, in which you
@@ -166,29 +120,33 @@ class PottsModelCountersSuite extends Assertions {
   }
 }
 
-  class MutualInformationPredictorSuite extends Assertions {
-    val domain: SpinDomain = new CategoricalDomain[Char](List('a', 'b'))
-    val seq0 = Spin.makeSequence("aba", domain)
-    val seq1 = Spin.makeSequence("bbb", domain)
-    val seq2 = Spin.makeSequence("aba", domain)
-    val seq3 = Spin.makeSequence("bbb", domain)
-    val msa = new MSA(List(seq0, seq1, seq2, seq3), Set(), domain, "test")
+class MutualInformationSuite extends Assertions {
 
-    @Test def PottsModelFreqCounterShouldCountLocalFreqs() {
-      val MIPredictor = new MututalInformationConnectionPredictor(msa)
-      assertEquals(0, MIPredictor.strengths(0, 1), 0.0001)
-      assertEquals(0, MIPredictor.strengths(1, 2), 0.0001)
+  val domain: SpinDomain = new CategoricalDomain[Char](List('a', 'b'))
+  val seq0 = Spin.makeSequence("aba", domain)
+  val seq1 = Spin.makeSequence("bbb", domain)
+  val seq2 = Spin.makeSequence("aba", domain)
+  val seq3 = Spin.makeSequence("bbb", domain)
+  val msa = new MSA(List(seq0, seq1, seq2, seq3), Set((0, 2)), domain, "test")
+  val MIPredictor = new MututalInformationConnectionPredictor(msa, false)
 
-      val expectedStrength02 =
-        (5.0/12 * math.log(20.0/12)) +
-        (1.0/12 * math.log(1.0/3)) +
-        (5.0/12 * math.log(20.0/12)) +
-        (1.0/12 * math.log(1.0/3))
+  @Test def MIShouldBeCorrect() {
+    val expectedStrength02 =
+      (5.0/12 * math.log(20.0/12)) +
+      (1.0/12 * math.log(1.0/3)) +
+      (5.0/12 * math.log(20.0/12)) +
+      (1.0/12 * math.log(1.0/3))
 
+    assertEquals(0, MIPredictor.strengths((0, 1)), 0.0001)
+    assertEquals(0, MIPredictor.strengths((1, 2)), 0.0001)
+    assertEquals(expectedStrength02, MIPredictor.strengths((0, 2)), 0.0001)
+  }
 
-      assertEquals(expectedStrength02, MIPredictor.strengths(0, 2), 0.0001)
-
-    }
+  @Test def TPRateShouldBeCorrect() {
+    assert(MIPredictor.strengthsDescending(0)._1 == (0, 2))
+    assert(MIPredictor.TPRate(100) == MIPredictor.TPRate(1))
+    assertEquals(1.0, MIPredictor.TPRate(1), 0.0001)
+  }
 
 }
 

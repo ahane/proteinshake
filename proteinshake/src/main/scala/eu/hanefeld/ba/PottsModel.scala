@@ -100,7 +100,6 @@ object PottsModel {
 
   private def generatePairs(numSites: Int, excludeNeighbors: Boolean, exclusionNeighborhood: Int): Seq[(Int, Int)] = {
 
-
     def includePair(i: Int, j: Int): Boolean = {
       (orderingIsValid(i, j) && (outsideOfNeighborhood(i, j, exclusionNeighborhood) || !excludeNeighbors))
     }
@@ -120,7 +119,7 @@ object PottsModel {
 
   /* This factory initializes a completely connected model, but initializes the local masses to be the the logarithms of
    * the local freuencies counted in a dataset. We add a pseudocount to deter limited sampling size effects.\
-   * DEPRECATED?
+   *
    */
   def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, excludeNeighbors: Boolean): PottsModel = {
     if(useLogFreqsAsLocalWeights) logFreqsAsLocalWeights(msa.sequences, msa.domain, excludeNeighbors)
@@ -132,6 +131,15 @@ object PottsModel {
       model
     }
   }
+  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, potentialConnections: Set[(Int, Int)]): PottsModel = {
+      val samples = msa.sequences
+      assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
+      val numSites = samples(0).length
+      val model = PottsModel(numSites, msa.domain, excludeNeighbors)
+      model
+
+  }
+  
 
   def logFreqsAsLocalWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean, pseudoCount: Double=2): PottsModel = {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
@@ -162,7 +170,7 @@ object PottsModel {
   /* We here abuse the tensor/factor infrastructure to collect empirical frequencies from a dataset.
    * The "weights" of the this model are then used to estimate mutual information in the Experiment class.
    */
-  def frequenciesAsWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean=false, pseudoCount: Double=1.): PottsModel = {
+  def frequenciesAsWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean, pseudoCount: Double=1.): PottsModel = {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
     val numSites = samples(0).length
     val numSamples = samples.toList.length

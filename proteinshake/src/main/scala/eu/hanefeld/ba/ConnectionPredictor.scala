@@ -13,7 +13,7 @@ abstract class ConnectionPredictor(val msa: MSA) {
 
   def strengths: Map[(Int, Int), Double]
 
-  def positives: Set[(Int, Int)] = msa.connections
+  val positives: Set[(Int, Int)] = msa.connections
 
   def strengthsDescending: List[((Int, Int), Double)] = { strengths.toList.sortBy(_._2).reverse }
 
@@ -22,7 +22,7 @@ abstract class ConnectionPredictor(val msa: MSA) {
     val until = if(upUntil > numPositives) numPositives else upUntil
     val predicted = strengthsDescending.slice(0, until).map(_._1).toSet
     val truePositives = positives intersect predicted
-    val tpRate = truePositives.size / numPositives
+    val tpRate = truePositives.size.toDouble / numPositives
     tpRate
   }
   def TPRate: Double = { TPRate(positives.size) }
@@ -30,6 +30,7 @@ abstract class ConnectionPredictor(val msa: MSA) {
 
 class ContrastiveDivergenceConnectionPredictor(
   msa: MSA,
+  potentialConnections: Set[(Int, Int)]=Set(),
   useLogFreqsAsLocalWeights: Boolean=true,
   numIterations: Int=3,
   l1: Double=0.5,
@@ -51,16 +52,19 @@ class ContrastiveDivergenceConnectionPredictor(
   Trainer.onlineTrain(model.parameters, CDExamples,
     optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations=numIterations, logEveryN=200)
 
-  def strengths = ConnectionStrengths(model)
+  val frobeniusNorms = ConnectionStrengths(model)
+
+  def strengths = frobeniusNorms
 }
 
-class MututalInformationConnectionPredictor(msa: MSA) extends ConnectionPredictor(msa) {
+class MututalInformationConnectionPredictor(msa: MSA, excludeNeighbors: Boolean) extends ConnectionPredictor(msa) {
 
-  val sequences = msa.sequences
-  val d = msa.domain
-  def strengths = {
-    //we abuse the PottsModel infrastructure for convenient counting of pairwise and single-site frequencies
-    val freqModel = PottsModel.frequenciesAsWeights(sequences, d)
+  private val sequences = msa.sequences
+  private val d = msa.domain
+  private val MIs = computeMIs
+
+  private def computeMIs = {
+    val freqModel = PottsModel.frequenciesAsWeights(sequences, d, excludeNeighbors)
 
     def localFreqs(i: Int) = freqModel.localFamilies(i).weights.value
     def pairwiseFreqs(i: Int, j: Int) = freqModel.pairwiseFamilies(i, j).weights.value
@@ -79,11 +83,14 @@ class MututalInformationConnectionPredictor(msa: MSA) extends ConnectionPredicto
       val MI = (for(k <- d.categories; l <- d.categories) yield summand(k, l)).sum
       MI
     }
-
-    val allEdges = freqModel.pairwiseFamilies.keys
-    val allMIs: Map[(Int, Int), Double] = (for(edge <- allEdges) yield (edge, singleMI(edge._1, edge._2))).toMap
+    val edges = freqModel.pairwiseFamilies.keys
+    val allMIs: Map[(Int, Int), Double] = (for(edge <- edges) yield (edge, singleMI(edge._1, edge._2))).toMap
     allMIs
-  }
+}
+
+  def strengths = { MIs }
+    //we abuse the PottsModel infrastructure for convenient counting of pairwise and single-site frequencies
+
 }
 
 /**
