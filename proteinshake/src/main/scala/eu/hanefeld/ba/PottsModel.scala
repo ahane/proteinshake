@@ -92,17 +92,17 @@ object PottsModel {
   /**
    * If just the number of variables and the domain is supplied, we create a completely connected model with weights initialized to zero.
    */
-  def apply(numSites: Int, domain: CategoricalDomain[Char], excludeNeighbors: Boolean = true, exclusionNeighborhood: Int = 4): PottsModel = {
+  def apply(numSites: Int, domain: SpinDomain, excludeNeighbors: Boolean, exclusionNeighborhood: Int = 4): PottsModel = {
     val localMasses = for(i <- 0 until numSites) yield new DenseTensor1(domain.size)
-    val pairwiseMasses = generatePairs(numSites, exclusionNeighborhood).map((_, new DenseTensor2(domain.size, domain.size))).toMap
+    val pairwiseMasses = generatePairs(numSites, excludeNeighbors, exclusionNeighborhood).map((_, new DenseTensor2(domain.size, domain.size))).toMap
     new PottsModel(domain, localMasses, pairwiseMasses)
   }
 
-  private def generatePairs(numSites: Int, exclusionNeighborhood: Int): Seq[(Int, Int)] = {
+  private def generatePairs(numSites: Int, excludeNeighbors: Boolean, exclusionNeighborhood: Int): Seq[(Int, Int)] = {
 
 
-    def includePair(i: Int, j: Int, neighborhood: Int): Boolean = {
-      orderingIsValid(i, j) && outsideOfNeighborhood(i, j, neighborhood)
+    def includePair(i: Int, j: Int): Boolean = {
+      (orderingIsValid(i, j) && (outsideOfNeighborhood(i, j, exclusionNeighborhood) || !excludeNeighbors))
     }
     def orderingIsValid(i: Int, j: Int): Boolean = { i < j }
 
@@ -113,7 +113,7 @@ object PottsModel {
       else { false }
 
     }
-    val pairs = for(i <- 0 until numSites; j <- 0 until numSites if includePair(i, j, exclusionNeighborhood)) yield (i, j)
+    val pairs = for(i <- 0 until numSites; j <- 0 until numSites if includePair(i, j)) yield (i, j)
 
     pairs
   }
@@ -122,30 +122,36 @@ object PottsModel {
    * the local freuencies counted in a dataset. We add a pseudocount to deter limited sampling size effects.\
    * DEPRECATED?
    */
-  def logFreqsAsLocalWeights(msa: MSA, excludeNeighbors: Boolean = true, exclusionNeighborhood: Int = 4): PottsModel = {
-    logFreqsAsLocalWeights(msa.sequences, msa.domain, excludeNeighbors, exclusionNeighborhood)
+  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, excludeNeighbors: Boolean): PottsModel = {
+    if(useLogFreqsAsLocalWeights) logFreqsAsLocalWeights(msa.sequences, msa.domain, excludeNeighbors)
+    else {
+      val samples = msa.sequences
+      assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
+      val numSites = samples(0).length
+      val model = PottsModel(numSites, msa.domain, excludeNeighbors)
+      model
+    }
   }
 
-  def logFreqsAsLocalWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean , exclusionNeighborhood: Int): PottsModel = {
-    val PSEUDOCOUNT = 2.
+  def logFreqsAsLocalWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean, pseudoCount: Double=2): PottsModel = {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
     val numSites = samples(0).length
     val numSamples = samples.toList.length
-    val model = PottsModel(numSites, domain, excludeNeighbors, exclusionNeighborhood)
+    val model = PottsModel(numSites, domain, excludeNeighbors)
 
-    //
+
     for ((family, i) <- model.localFamilies.zipWithIndex) {
       val weightTensor = model.parameters(family.weights)
 
       val pseudoCountTensor = weightTensor.copy
-      for(i <- 0 until pseudoCountTensor.asArray.length) pseudoCountTensor.update(i, PSEUDOCOUNT)
+      for(i <- 0 until pseudoCountTensor.asArray.length) pseudoCountTensor.update(i, pseudoCount)
       weightTensor += pseudoCountTensor
 
       for(s <- samples) {
         val factor = family.Factor(s(i))
         weightTensor += factor.currentStatistics
       }
-      weightTensor *= 1./(numSamples + (domain.size * PSEUDOCOUNT))
+      weightTensor *= 1./(numSamples + (domain.size * pseudoCount))
 
       for(i <- 0 until weightTensor.length) weightTensor.update(i, math.log(weightTensor(i)))
     }
@@ -156,19 +162,18 @@ object PottsModel {
   /* We here abuse the tensor/factor infrastructure to collect empirical frequencies from a dataset.
    * The "weights" of the this model are then used to estimate mutual information in the Experiment class.
    */
-  def frequenciesAsWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean = true, exclusionNeighborhood: Int = 4): PottsModel = {
-    val PSEUDOCOUNT = 2.
+  def frequenciesAsWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean=false, pseudoCount: Double=1.): PottsModel = {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
     val numSites = samples(0).length
     val numSamples = samples.toList.length
-    val model = PottsModel(numSites, domain,  excludeNeighbors, exclusionNeighborhood)
+    val model = PottsModel(numSites, domain, excludeNeighbors)
 
     for ((key, family) <- model.pairwiseFamilies) {
       val weightTensor = model.parameters(family.weights)
 
       //we add a pseudocount as in [Weight08]
       val pseudoCountTensor = weightTensor.copy
-      for(i <- 0 until pseudoCountTensor.asArray.length) pseudoCountTensor.update(i, (PSEUDOCOUNT/domain.size))
+      for(i <- 0 until pseudoCountTensor.asArray.length) pseudoCountTensor.update(i, (pseudoCount/domain.size))
       weightTensor += pseudoCountTensor
 
       for(s <- samples) {
@@ -176,7 +181,7 @@ object PottsModel {
         weightTensor += factor.currentStatistics
       }
       //we correct our denominator by domain.size to account for the pseudocount
-      weightTensor *= 1./(numSamples + (domain.size * PSEUDOCOUNT))
+      weightTensor *= 1./(numSamples + (domain.size * pseudoCount))
       for(i <- 0 until weightTensor.length) weightTensor.update(i, weightTensor(i))
     }
 
@@ -184,14 +189,14 @@ object PottsModel {
       val weightTensor = model.parameters(family.weights)
 
       val pseudoCountTensor = weightTensor.copy
-      for(i <- 0 until pseudoCountTensor.asArray.length) pseudoCountTensor.update(i, PSEUDOCOUNT)
+      for(i <- 0 until pseudoCountTensor.asArray.length) pseudoCountTensor.update(i, pseudoCount)
       weightTensor += pseudoCountTensor
 
       for(s <- samples) {
         val factor = family.Factor(s(i))
         weightTensor += factor.currentStatistics
       }
-      weightTensor *= 1./(numSamples + (domain.size * PSEUDOCOUNT))
+      weightTensor *= 1./(numSamples + (domain.size * pseudoCount))
       for(i <- 0 until weightTensor.length) weightTensor.update(i, weightTensor(i))
     }
     model

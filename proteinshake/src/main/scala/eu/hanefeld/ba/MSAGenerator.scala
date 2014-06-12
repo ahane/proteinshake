@@ -27,13 +27,14 @@ class MSAGenerator(
 
   val model = PottsModel(localWeights, pairwiseWeights, domain)
 
-  val trueDistances = ConnectionStrengths(model, "bert")
+  //val trueDistances = ConnectionStrengths(model, "bert")
 
   val sampler = new GibbsSampler(model)
   val spinSequence: SpinSequence = Spin.makeSequence(numSites, domain)
   //we draw burnInCount times and disregard the values
+  println("--Starting burn in --")
   sampler.processAll(spinSequence, burnInCount)
-
+  println("--burn in ended--")
   var sequences: IndexedSeq[String] = null
   var sequencesGenerated: Boolean = false
   def generateSequenceStrings(numSamples: Int = 2000): Unit = {
@@ -42,21 +43,22 @@ class MSAGenerator(
   }
   private def drawString: String = {
     //we sample thinningCount times first
+    println("--drawing string--")
+    println("..thinning..")
     sampler.processAll(spinSequence, thinningCount)
+    println("..thinning ended..")
     return spinSequence.map(_.value).mkString
   }
 
 
-
-
-
   def getJSON: String = {
     if(!sequencesGenerated) { this.generateSequenceStrings() }
-    val connections = trueDistances.getPositivesAsJSON
+    val connections = pairwiseWeights.keys
+    val connectionsStrings = connections.toList.map(c => c._1.toString + ";" + c._2.toString)
     val json = ("MSA" ->
       ("sequences" -> sequences) ~
         ("name" -> name) ~
-        ("connections" -> connections) ~
+        ("connections" -> connectionsStrings) ~
         ("edge-prob" -> edgeProbability))
     return pretty(render(json))
   }

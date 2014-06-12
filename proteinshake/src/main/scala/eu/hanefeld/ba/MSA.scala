@@ -16,10 +16,7 @@ class MSA(
   val sequences: List[SpinSequence],
   val connections: Set[(Int, Int)],
   val domain: SpinDomain,
-  val name: String) {
-
-  def printmama(): Unit = {print(connections)}
-}
+  val name: String)
 
 
 object MSA {

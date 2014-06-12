@@ -21,9 +21,15 @@ object ProteinShake {
     val msaJson = json.extract[MSAJson]
     val msa = MSA(msaJson)
 
-    val model = PottsModel.logFreqsAsLocalWeights(msa)
+    println("--calculating mututal information--")
+    val mipred = new MututalInformationConnectionPredictor(msa)
+    println("TPRate:" + mipred.TPRate.toString)
+    println()
+    println("--learning CD model--")
+    val cdpred = new ContrastiveDivergenceConnectionPredictor(msa)
+    println("TPRate: " + cdpred.TPRate.toString)
 
-    print(model.pairwiseFamilies.keys)
+
 
 //  import options._
 //  println(numIterations.value)
