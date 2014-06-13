@@ -43,10 +43,7 @@ class MSAGenerator(
   }
   private def drawString: String = {
     //we sample thinningCount times first
-    println("--drawing string--")
-    println("..thinning..")
     sampler.processAll(spinSequence, thinningCount)
-    println("..thinning ended..")
     return spinSequence.map(_.value).mkString
   }
 
@@ -55,7 +52,7 @@ class MSAGenerator(
     if(!sequencesGenerated) { this.generateSequenceStrings() }
     val connections = pairwiseWeights.keys
     val connectionsStrings = connections.toList.map(c => c._1.toString + ";" + c._2.toString)
-    val json = ("MSA" ->
+    val json = (
       ("sequences" -> sequences) ~
         ("name" -> name) ~
         ("connections" -> connectionsStrings) ~
@@ -69,8 +66,8 @@ object MSAGenerator {
              domain: SpinDomain,
              name: String,
              edgeProbability: Double = 0.3,
-             burnInCount: Int = 1000,
-             thinningCount: Int = 20 ): MSAGenerator = {
+             burnInCount: Int = 500,
+             thinningCount: Int = 10 ): MSAGenerator = {
     new MSAGenerator(numSites: Int, domain, name, edgeProbability, burnInCount, thinningCount)
   }
 }

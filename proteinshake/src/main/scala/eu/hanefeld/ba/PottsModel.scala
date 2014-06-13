@@ -92,13 +92,32 @@ object PottsModel {
   /**
    * If just the number of variables and the domain is supplied, we create a completely connected model with weights initialized to zero.
    */
-  def apply(numSites: Int, domain: SpinDomain, excludeNeighbors: Boolean, exclusionNeighborhood: Int = 4): PottsModel = {
+  def apply(numSites: Int, domain: SpinDomain, possibleConnections: Set[(Int, Int)]): PottsModel = {
     val localMasses = for(i <- 0 until numSites) yield new DenseTensor1(domain.size)
-    val pairwiseMasses = generatePairs(numSites, excludeNeighbors, exclusionNeighborhood).map((_, new DenseTensor2(domain.size, domain.size))).toMap
-    new PottsModel(domain, localMasses, pairwiseMasses)
+    val pairwiseMasses = possibleConnections.map((_, new DenseTensor2(domain.size, domain.size))).toMap
+    PottsModel(localMasses, pairwiseMasses,domain)
   }
 
-  private def generatePairs(numSites: Int, excludeNeighbors: Boolean, exclusionNeighborhood: Int): Seq[(Int, Int)] = {
+  /* This factory initializes a completely connected model, but initializes the local masses to be the the logarithms of
+   * the local freuencies counted in a dataset. We add a pseudocount to deter limited sampling size effects.\
+   *
+   */
+  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, possiblePairs: Set[(Int, Int)]): PottsModel = {
+    val numSites = msa.sequences(0).length
+
+    if(useLogFreqsAsLocalWeights) logFreqsAsLocalWeights(msa.sequences, msa.domain, possiblePairs)
+    else PottsModel(numSites, msa.domain, possiblePairs)
+  }
+
+  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, excludeNeighbors: Boolean, exclusionRange: Int=4): PottsModel = {
+    val numSites = msa.sequences(0).length
+    val possiblePairs = generatePairs(numSites, excludeNeighbors, exclusionRange)
+    PottsModel(numSites, msa.domain, possiblePairs)
+  }
+
+
+
+  private def generatePairs(numSites: Int, excludeNeighbors: Boolean, exclusionNeighborhood: Int): Set[(Int, Int)] = {
 
     def includePair(i: Int, j: Int): Boolean = {
       (orderingIsValid(i, j) && (outsideOfNeighborhood(i, j, exclusionNeighborhood) || !excludeNeighbors))
@@ -114,38 +133,14 @@ object PottsModel {
     }
     val pairs = for(i <- 0 until numSites; j <- 0 until numSites if includePair(i, j)) yield (i, j)
 
-    pairs
+    pairs.toSet
   }
 
-  /* This factory initializes a completely connected model, but initializes the local masses to be the the logarithms of
-   * the local freuencies counted in a dataset. We add a pseudocount to deter limited sampling size effects.\
-   *
-   */
-  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, excludeNeighbors: Boolean): PottsModel = {
-    if(useLogFreqsAsLocalWeights) logFreqsAsLocalWeights(msa.sequences, msa.domain, excludeNeighbors)
-    else {
-      val samples = msa.sequences
-      assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
-      val numSites = samples(0).length
-      val model = PottsModel(numSites, msa.domain, excludeNeighbors)
-      model
-    }
-  }
-  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, potentialConnections: Set[(Int, Int)]): PottsModel = {
-      val samples = msa.sequences
-      assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
-      val numSites = samples(0).length
-      val model = PottsModel(numSites, msa.domain, excludeNeighbors)
-      model
-
-  }
-  
-
-  def logFreqsAsLocalWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean, pseudoCount: Double=2): PottsModel = {
+  def logFreqsAsLocalWeights(samples: Seq[SpinSequence], domain: SpinDomain, possiblePairs: Set[(Int, Int)], pseudoCount: Double=2): PottsModel = {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
     val numSites = samples(0).length
     val numSamples = samples.toList.length
-    val model = PottsModel(numSites, domain, excludeNeighbors)
+    val model = PottsModel(numSites, domain, possiblePairs)
 
 
     for ((family, i) <- model.localFamilies.zipWithIndex) {
@@ -174,7 +169,7 @@ object PottsModel {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
     val numSites = samples(0).length
     val numSamples = samples.toList.length
-    val model = PottsModel(numSites, domain, excludeNeighbors)
+    val model = PottsModel(numSites, domain, generatePairs(numSites, false, -1))
 
     for ((key, family) <- model.pairwiseFamilies) {
       val weightTensor = model.parameters(family.weights)

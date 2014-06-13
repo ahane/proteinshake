@@ -16,7 +16,17 @@ class MSA(
   val sequences: List[SpinSequence],
   val connections: Set[(Int, Int)],
   val domain: SpinDomain,
-  val name: String)
+  val name: String) {
+
+  //val weightedSequences =
+
+  private def similarity(seq1: SpinSequence, seq2: SpinSequence): Double ={
+    assert(seq1.length == seq2.length)
+    val numSites = seq1.length
+    val same = (for(i <- 0 until numSites if seq1(i) == seq2(i)) yield 1).sum
+    same/numSites
+  }
+}
 
 
 object MSA {

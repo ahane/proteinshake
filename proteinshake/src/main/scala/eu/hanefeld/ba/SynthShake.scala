@@ -18,7 +18,10 @@ object SynthShake {
     val name = SynthOptions.name.value
     val edgeProbability = SynthOptions.edgeProbability.value
     val numSamples = SynthOptions.numSamples.value
+    println(numSamples)
+    println(numSites)
     createAndSaveMSA(numSites, domainSize, name, edgeProbability, numSamples)
+
 
   }
 
@@ -37,7 +40,7 @@ object SynthShake {
   private def saveToFile(name: String, json: String): Unit = {
     import scalax.io._
 
-    val out: Output = Resource.fromFile("data/syn/"+ name + ".json" )
+    val out: Output = Resource.fromFile("data/synth/"+ name + ".json" )
     out.write(json)
   }
   private def makeDomain(domainSize: Int): SpinDomain = {
@@ -51,11 +54,11 @@ object SynthShake {
 }
 
 object SynthOptions extends CmdOptions {
-  val numSites = new CmdOption("num-sites", 50, "INT", "Number of spins in this model")
+  val numSites = new CmdOption("num-sites", 30, "INT", "Number of spins in this model")
   val domainSize = new CmdOption("domain-size", 21, "INT", "Number of different values a site can take")
   val name = new CmdOption("name", "synth", "STRING", "Name of the synthetic MSA to make")
-  val edgeProbability = new CmdOption("edge-prob", 0.4, "DOUBLE", "Probability of a connection between two sites existing")
-  val numSamples = new CmdOption("num-samples", 1000, "INT", "Number of sequences to generate")
+  val edgeProbability = new CmdOption("edge-prob", 0.3, "DOUBLE", "Probability of a connection between two sites existing")
+  val numSamples = new CmdOption("num-samples", 600, "INT", "Number of sequences to generate")
 
   //Commands for the SynthShakeSeries App
   val numMSAs = new CmdOption("num-msa", 10, "INT", "Number of sythetic MSAs to generate")

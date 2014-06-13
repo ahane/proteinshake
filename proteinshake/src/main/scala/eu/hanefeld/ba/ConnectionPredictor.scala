@@ -15,7 +15,9 @@ abstract class ConnectionPredictor(val msa: MSA) {
 
   val positives: Set[(Int, Int)] = msa.connections
 
-  def strengthsDescending: List[((Int, Int), Double)] = { strengths.toList.sortBy(_._2).reverse }
+  def strengthsDescending: List[((Int, Int), Double)] = strengths.toList.sortBy(_._2).reverse
+
+  def connectionsWithStrengthsOfAtLeast(threshold: Double): Set[(Int, Int)] = strengths.toList.filter(_._2 >= threshold).map(_._1).toSet
 
   def TPRate(upUntil: Int): Double = {
     val numPositives = positives.size
@@ -33,21 +35,21 @@ class ContrastiveDivergenceConnectionPredictor(
   potentialConnections: Set[(Int, Int)]=Set(),
   useLogFreqsAsLocalWeights: Boolean=true,
   numIterations: Int=3,
-  l1: Double=0.5,
+  learningRate: Double=1,
+  l1: Double=0.01,
+  l2: Double=0.000001,
   useParallelTrainer: Boolean=true,
   opt: String="AdaGradRDA") extends ConnectionPredictor(msa) {
 
   implicit val random = new scala.util.Random(0)
 
+  val useAllConnections = (potentialConnections.size == 0)
+  val model = if(useAllConnections) PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbors=true) else PottsModel(msa,useLogFreqsAsLocalWeights, potentialConnections)
+
   val sequences = msa.sequences
-  val model = PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbors=true)
   val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
   val CDExamples = sequences.map(new ContrastiveDivergenceExampleVector(_, model, sampler))
-  val optimizer = opt match {
-    case "AdaGrad" =>  new AdaGrad
-    case "AdaGradRDA" =>  new AdaGradRDA(l1 = l1)
-    case _ => new AdaGradRDA(l1 = l1)
-  }
+  val optimizer = new AdaGradRDA(rate=learningRate, l1 = l1, l2=l2, numExamples = msa.sequences.length)
 
   Trainer.onlineTrain(model.parameters, CDExamples,
     optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations=numIterations, logEveryN=200)
@@ -70,7 +72,6 @@ class MututalInformationConnectionPredictor(msa: MSA, excludeNeighbors: Boolean)
     def pairwiseFreqs(i: Int, j: Int) = freqModel.pairwiseFamilies(i, j).weights.value
 
     def singleMI(i: Int, j: Int): Double = {
-      println("Calculation MI("+i.toString+","+j.toString+")")
       def f_i(k: SpinValue) = localFreqs(i)(d.index(k))
       def f_j(k: SpinValue) = localFreqs(j)(d.index(k))
       def f_ij(k: SpinValue, l: SpinValue) = pairwiseFreqs(i, j)(d.index(k), d.index(l))
