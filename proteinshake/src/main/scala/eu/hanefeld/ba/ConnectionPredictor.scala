@@ -5,11 +5,14 @@ import cc.factorie.infer.Sampler
 import cc.factorie.optimize.{AdaGrad, AdaGradRDA, Trainer}
 import cc.factorie.la.DenseTensor2
 import eu.hanefeld.ba.Types.SpinValue
+import org.json4s.JsonDSL._
+import org.json4s.jackson.JsonMethods._
+import org.json4s.JsonAST.{JObject, JField, JString, JDouble}
 
 /**
  * Created by alec on 6/10/14.
  */
-abstract class ConnectionPredictor(val msa: MSA) {
+abstract class ConnectionPredictor(val msa: MSA, saveToFile: Boolean=true, fileext: String="pred1") {
 
   def strengths: Map[(Int, Int), Double]
 
@@ -28,6 +31,27 @@ abstract class ConnectionPredictor(val msa: MSA) {
     tpRate
   }
   def TPRate: Double = { TPRate(positives.size) }
+
+  def saveResultsToFile(nameext: String): Unit = {
+    import scalax.io._
+    val out: Output = Resource.fromFile("pred/"+msa.name+"/"+ nameext + ".json" )
+    out.write(getJson)
+
+  }
+
+  def getJson(): String = {
+    val name = msa.name
+    val numSites = msa.sequences(0).length
+    val connectionsStrings = positives.toList.map(p => p._1.toString + ";" + p._2.toString)
+    val predictionsMapStrings = (for((key, strength) <- strengths.toList) yield (key._1.toString +";"+key._2.toString, strength)).toMap
+    val predictionsJson = (for((key, strength) <- predictionsMapStrings.toList) yield JObject(JField(key, JDouble(strength)) :: Nil)).toList
+    val json = (
+        ("name" -> name) ~
+        ("postivives" -> connectionsStrings) ~
+        ("predictions" -> predictionsJson))
+    return pretty(render(json))
+  }
+
 }
 
 class ContrastiveDivergenceConnectionPredictor(
@@ -52,10 +76,9 @@ class ContrastiveDivergenceConnectionPredictor(
   val optimizer = new AdaGradRDA(rate=learningRate, l1 = l1, l2=l2, numExamples = msa.sequences.length)
 
   Trainer.onlineTrain(model.parameters, CDExamples,
-    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations=numIterations, logEveryN=200)
+    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations)
 
   val frobeniusNorms = ConnectionStrengths(model)
-
   def strengths = frobeniusNorms
 }
 

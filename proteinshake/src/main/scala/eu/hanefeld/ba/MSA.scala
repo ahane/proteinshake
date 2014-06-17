@@ -26,6 +26,12 @@ class MSA(
     val same = (for(i <- 0 until numSites if seq1(i) == seq2(i)) yield 1).sum
     same/numSites
   }
+  //the threshold comes from [Weigt2011]
+  private def numSimilarSequences(seq1: SpinSequence, threshold: Double=0.8): Int = {
+    val similarities = for(seq2 <- sequences) yield similarity(seq1, seq2)
+    val overThreshold = for(sim <- similarities) yield if(sim >= threshold) 1 else 0
+    return overThreshold.sum
+  }
 }
 
 
