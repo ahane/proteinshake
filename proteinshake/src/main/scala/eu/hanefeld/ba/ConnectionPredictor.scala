@@ -2,13 +2,16 @@ package eu.hanefeld.ba
 
 import cc.factorie.GibbsSampler
 import cc.factorie.infer.Sampler
-import cc.factorie.optimize.{AdaGrad, AdaGradRDA, Trainer}
+import cc.factorie.optimize._
 import cc.factorie.la.DenseTensor2
+import cc.factorie._
+
 import eu.hanefeld.ba.Types.SpinValue
 import org.json4s.JsonDSL._
 import org.json4s.jackson.JsonMethods._
 import org.json4s.JsonAST.{JObject, JField, JString, JDouble}
 import cc.factorie.variable.DiffList
+import org.json4s.JsonAST.JDouble
 
 /**
  * Created by alec on 6/10/14.
@@ -44,7 +47,7 @@ abstract class ConnectionPredictor(val msa: MSA, excludeNeighbours: Boolean=fals
 
   def saveResultsToFile(nameext: String): Unit = {
     import scalax.io._
-    val out: Output = Resource.fromFile("pred/"+msa.name+"/"+ nameext + ".json" )
+    val out: Output = Resource.fromOutputStream(new java.io.FileOutputStream("pred/"+msa.name+"/"+ nameext + ".json"))
     out.write(getJson)
 
   }
@@ -57,7 +60,8 @@ abstract class ConnectionPredictor(val msa: MSA, excludeNeighbours: Boolean=fals
     val json = (
         ("name" -> name) ~
         ("postivives" -> connectionsStrings) ~
-        ("predictions" -> predictionsJson))
+        ("predictions" -> predictionsJson) ~
+        ("tp-rate" -> TPRate))
     return pretty(render(json))
   }
 
@@ -68,30 +72,46 @@ class ContrastiveDivergenceConnectionPredictor(
   msa: MSA,
   excludeNeighbours: Boolean,
   potentialConnections: Set[(Int, Int)]=Set(),
-  useLogFreqsAsLocalWeights: Boolean=true,
   numIterations: Int=3,
   learningRate: Double=1,
   l1: Double=0.01,
   l2: Double=0.000001,
   k: Int=1,
   useParallelTrainer: Boolean=true,
-  opt: String="AdaGradRDA") extends ConnectionPredictor(msa, excludeNeighbours) {
+  useLogFreqs: Boolean=true) extends ConnectionPredictor(msa, excludeNeighbours) {
 
   implicit val random = new scala.util.Random(0)
 
   val useAllConnections = (potentialConnections.size == 0)
   val model =
-    if(useAllConnections) PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbors=excludeNeighbours)
-    else PottsModel(msa,useLogFreqsAsLocalWeights, potentialConnections)
+    if(useAllConnections) PottsModel(msa, useLogFreqs, excludeNeighbors=excludeNeighbours)
+    else PottsModel(msa, useLogFreqs, potentialConnections)
 
   val sequences = msa.sequences
   val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
   val CDExamples = sequences.map(new ContrastiveDivergenceExampleVector(_, model, sampler, k))
-  val optimizer = new AdaGradRDA(rate = learningRate, l1 = l1, l2 = l2, numExamples = sequences.length)
 
-  Trainer.onlineTrain(model.parameters, CDExamples,
-    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations)
 
+  def trainAdaGradRDA() = {
+    val optimizer = new AdaGradRDA(rate = learningRate, l1 = l1, l2 = l2, numExamples = sequences.length)
+    val parameters = model.parameters
+    parameters.keys.foreach(_.value) // make sure we initialize the values in a single thread
+    optimizer.initializeWeights(parameters)
+    val trainer = new ParallelOnlineTrainer(parameters, optimizer=optimizer, maxIterations=numIterations)
+    trainer.replaceTensorsWithLocks()
+    try {
+      while (!trainer.isConverged) {
+        trainer.processExamples(CDExamples.shuffle)
+      }
+    } finally {
+      trainer.removeLocks()
+      optimizer.finalizeWeights(parameters)
+    }
+
+  }
+  //Trainer.onlineTrain(model.parameters, CDExamples,
+  //  optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations)
+  trainAdaGradRDA()
   val frobeniusNorms = ConnectionStrengths(model)
   def strengths = frobeniusNorms
 }

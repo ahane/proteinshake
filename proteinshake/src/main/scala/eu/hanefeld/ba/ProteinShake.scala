@@ -41,11 +41,16 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
     val lr = options.learningRate.value
     val iterations = options.numIterations.value
     val numSteps = options.cdSteps.value
-    println("with parameters: l1="+l1.toString+", l2="+l2.toString+", lr="+lr.toString + ", numIter="+iterations.toString+", k="+numSteps.toString)
+    val useLogFreqs = options.useLogFreqs.value
+    println("with parameters: l1="+l1.toString+
+      ", l2="+l2.toString+
+      ", lr="+lr.toString +
+      ", numIter="+iterations.toString+", " +
+      "k="+numSteps.toString)
 
     val CDPred =
         new ContrastiveDivergenceConnectionPredictor(msa, potentialConnections=topMIConnections, l1=l1, l2=l2,
-          learningRate=lr, numIterations=iterations, k=numSteps, excludeNeighbours=true)
+          learningRate=lr, numIterations=iterations, k=numSteps, excludeNeighbours=true, useLogFreqs=useLogFreqs)
 
     //val cdpred = new MututalInformationConnectionPredictor(msa, true)
     println("TPRate: " + CDPred.TPRate.toString)
@@ -89,8 +94,8 @@ trait ProteinShakeOptions extends CmdOptions {
   val numTrails = new CmdOption("trails", 5, "INT", "Number of hyperparamter trails to run")
 
   val miSubselect = new CmdOption("MI-subselection", true, "BOOLEAN", "Set true if we only want to send connections with a minimum MI to the CDPredictor")
-  val reweightSamples =  new CmdOption("reweight", true, "BOOLEAN", "Set true if we want to reweight our samples by their uniqueness")
-  val useConsec = new CmdOption("use-consec", false, "BOOLEAN", "Set true if you want to use the number of actual true positives before the first false positve as a measurement")
+  val useLogFreqs =  new CmdOption("--use-log-freqs", true, "BOOLEAN", "Set true if we want to initialize local weights with empirical log-frequencies")
+
 }
 
 
@@ -104,7 +109,7 @@ object ProteinShakeOptimizer {
     val l1  = cc.factorie.util.HyperParameter(options.l1, new LogUniformDoubleSampler(1e-12, 1))
     val l2  = cc.factorie.util.HyperParameter(options.l2, new LogUniformDoubleSampler(1e-12, 1))
     val lr  = cc.factorie.util.HyperParameter(options.learningRate, new LogUniformDoubleSampler(1e-3, 10))
-    val k  = cc.factorie.util.HyperParameter(options.cdSteps, new SampleFromSeq(Seq(1, 5, 10)))
+    val k  = cc.factorie.util.HyperParameter(options.cdSteps, new SampleFromSeq(Seq(1, 2, 3, 5, 10)))
 
 
     //Why doesn't this find options.numTrails???
