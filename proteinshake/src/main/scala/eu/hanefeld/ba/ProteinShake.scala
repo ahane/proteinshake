@@ -1,4 +1,5 @@
 package eu.hanefeld.ba
+import cc.factorie.util.DefaultCmdOptions
 import cc.factorie.variable.CategoricalDomain
 import cc.factorie.util.{HyperParameter, LogUniformDoubleSampler, CmdOptions}
 import eu.hanefeld.ba.Types._
@@ -7,8 +8,6 @@ import org.json4s.jackson.JsonMethods._
 import org.json4s._
 import scala.collection.mutable.{ListBuffer, ArrayBuffer}
 
-
-object ProteinShakeTrainerSingle extends ProteinShakeTrainer
 
 class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
   object options extends ProteinShakeOptions
@@ -35,13 +34,15 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
         Set()
       }
 
-    println("== Learning CD model ==")
+
     val l1 = options.l1.value
     val l2 = options.l2.value
     val lr = options.learningRate.value
     val iterations = options.numIterations.value
     val numSteps = options.cdSteps.value
     val useLogFreqs = options.useLogFreqs.value
+
+    println("== Learning CD model ==")
     println("   Parameters: l1="+l1.toString+
       ", l2="+l2.toString+
       ", lr="+lr.toString +
@@ -65,6 +66,7 @@ object ProteinShakeUtil {
 
   var currentMSA: MSA = null
   var currentFilepath: String = ""
+
   def loadMSAFromFile(filepath: String): MSA = {
     implicit val formats = DefaultFormats //for the json reader
     if(filepath == currentFilepath) currentMSA
@@ -77,15 +79,15 @@ object ProteinShakeUtil {
     }
   }
 
-  private def readFromFile(filepath: String): String = {
+  private def readFromFile(filePath: String): String = {
     import scalax.io._
     try {
-      val in: Input = Resource.fromFile(filepath)
+      val in: Input = Resource.fromFile(filePath)
       in.string
     }
     catch {
       case e: Exception => println("Failed to locate MSA data file");
-        None.asInstanceOf[String]
+        null
     }
 
   }
@@ -110,9 +112,9 @@ object ProteinShakeUtil {
 
 }
 
-trait ProteinShakeOptions extends CmdOptions {
+trait ProteinShakeOptions extends CmdOptions with DefaultCmdOptions{
   //
-  val filePath = new CmdOption("msa-file", "synth/synth.json", "FILENAME", "Name of msa.json file that should be used.")
+  val filePath = new CmdOption("msa-file", "data/synth/synth.json", "FILENAME", "Name of msa.json file that should be used.")
 
   val numIterations = new CmdOption("iterations", 3, "INT", "Number of iterations of the SGD algorithm")
   val useNumIter = new CmdOption("use-iter", false, "BOOLEAN", "Set true if we want to vary the number of SGD iterations")
@@ -123,10 +125,12 @@ trait ProteinShakeOptions extends CmdOptions {
 
   val l1 = new CmdOption("l1", 0.0, "DOUBLE", "regularization rate l1")
   val l2 = new CmdOption("l2", 0.0, "DOUBLE", "regularization rate l2")
-  val useL1 = new CmdOption("use-l1", false, "BOOLEAN", "Set if l1 regularization should be used")
-  val useL2 = new CmdOption("use-l2", false, "BOOLEAN", "Set if l2 regularization should be used")
+  val useL1 = new CmdOption("tune-l1", false, "BOOLEAN", "Set if l1 regularization should be used")
+  val useL2 = new CmdOption("tune-l2", false, "BOOLEAN", "Set if l2 regularization should be used")
 
-  val learningRate = new CmdOption("learning-rate", 0.1, "DOUBLE", "Learning rate")
+
+  val learningRate = new CmdOption("learning-rate", 0.9, "DOUBLE", "Learning rate")
+  val useLearningRate = new CmdOption("tune-lr", false, "BOOLEAN", "Set if learning rate should be tuned")
 
   val numTrails = new CmdOption("trails", 5, "INT", "Number of hyperparamter trails to run")
 
@@ -155,7 +159,8 @@ object ProteinShakeOptimizer {
     val numTrails = options.numTrails.value
     val numToFinish = (numTrails * 0.7).toInt
 
-    val optionsToSearch = ListBuffer[HyperParameter[_]](lr)
+    val optionsToSearch = new ListBuffer[HyperParameter[_]]
+    if(options.useLearningRate.value) optionsToSearch.append(lr)
     if(options.useL1.value) optionsToSearch.append(l1)
     if(options.useL2.value) optionsToSearch.append(l2)
     if(options.useNumIter.value) optionsToSearch.append(iter)
@@ -179,6 +184,12 @@ object ProteinShakeOptimizer {
       val trainer = new ProteinShakeTrainer
       trainer.evaluateParameters(cmdOptions)
     }
+    f onFailure {
+      case t => println("An error has occured: " + t.getMessage)
+    }
+
     f
   }
 }
+
+import concurrent.ExecutionContext.

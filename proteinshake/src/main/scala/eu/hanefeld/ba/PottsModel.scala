@@ -120,12 +120,17 @@ object PottsModel {
   def generatePairs(numSites: Int, excludeNeighbors: Boolean, neighbourhood: Int): Set[(Int, Int)] = {
 
     def includePair(i: Int, j: Int): Boolean = {
-      (orderingIsValid(i, j) && (outsideOfNeighborhood(i, j, neighbourhood) || !excludeNeighbors))
+      if(excludeNeighbors) {
+        orderingIsValid(i, j) && isOutsideOfNeighborhood(i, j, neighbourhood)
+      } else {
+        orderingIsValid(i, j)
+      }
     }
+
     def orderingIsValid(i: Int, j: Int): Boolean = { i < j }
 
-    def outsideOfNeighborhood(i: Int, j: Int, neighborhood: Int): Boolean = {
-      val distance = j - i
+    def isOutsideOfNeighborhood(i: Int, j: Int, neighborhood: Int): Boolean = {
+      val distance = (j - i).abs
       val isOutside = distance > neighborhood
       if(isOutside) { true }
       else { false }

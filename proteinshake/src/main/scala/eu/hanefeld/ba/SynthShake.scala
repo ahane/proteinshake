@@ -20,15 +20,16 @@ object SynthShake {
     val numSamples = SynthOptions.numSamples.value
     println(numSamples)
     println(numSites)
-    createAndSaveMSA(numSites, domainSize, name, edgeProbability, numSamples)
+    val random = new util.Random(0)
+    createAndSaveMSA(numSites, domainSize, name, edgeProbability, numSamples, random)
 
 
   }
 
-  def createAndSaveMSA(numSites: Int, domainSize: Int, name: String, edgeProbability: Double, numSamples: Int): Unit = {
+  def createAndSaveMSA(numSites: Int, domainSize: Int, name: String, edgeProbability: Double, numSamples: Int, random: util.Random): Unit = {
     val domain = makeDomain(domainSize)
     println("Intantiating MSA Generator...")
-    val generator = MSAGenerator(numSites, domain, name, edgeProbability)
+    val generator = new MSAGenerator(numSites, domain, name, edgeProbability)(random)
     println("Drawing samples...")
     generator.generateSequenceStrings(numSamples)
     println("Saving to file...")
@@ -76,10 +77,11 @@ object SynthShakeSeries {
     val numSamples = SynthOptions.numSamples.value
 
     val numMSAs = SynthOptions.numMSAs.value
+    val random = new util.Random(0)
     for(i <- 0 until numMSAs) {
       println("Creating MSA no. " + i.toString + " of " + numMSAs.toString)
       val name = nameStem + i.toString
-      SynthShake.createAndSaveMSA(numSites, domainSize, name, this.edgeProbability, numSamples)
+      SynthShake.createAndSaveMSA(numSites, domainSize, name, edgeProbability, numSamples, random)
     }
   }
 

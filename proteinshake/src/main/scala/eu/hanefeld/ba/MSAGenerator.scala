@@ -17,9 +17,9 @@ class MSAGenerator(
   val name: String,
   val edgeProbability: Double,
   //val numSamples: Double = 5000,
-  val burnInCount: Int,
-  val thinningCount: Int) {
-  implicit val random = new scala.util.Random(0)
+  val burnInCount: Int=500,
+  val thinningCount: Int=10)(implicit val random: scala.util.Random) {
+  //implicit val random = new scala.util.Random(0)
 
   val weightGenerator = WeightGenerator(domain, numSites, edgeProbability)
   val localWeights = weightGenerator.generateLocalMasses
@@ -61,13 +61,3 @@ class MSAGenerator(
   }
 }
 
-object MSAGenerator {
-  def apply( numSites: Int,
-             domain: SpinDomain,
-             name: String,
-             edgeProbability: Double = 0.3,
-             burnInCount: Int = 500,
-             thinningCount: Int = 10 ): MSAGenerator = {
-    new MSAGenerator(numSites: Int, domain, name, edgeProbability, burnInCount, thinningCount)
-  }
-}

@@ -57,7 +57,7 @@ class PottsModelCountersSuite extends Assertions {
   val msa = new MSA(List(seq0, seq1, seq2, seq3), Set(), domain, "test")
 
   @Test def PottsModelFreqCounterShouldCountLocalFreqs() {
-    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, pseudoCount=0)
+    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, 0, pseudoCount=0)
     //                         a     b     c
     val expectedCounts = Array(0.25, 0.25, 0.5)
     def actualCounts(i: Int): Array[Double] = { freqModel.localFamilies(i).weights.value.toArray }
@@ -67,7 +67,7 @@ class PottsModelCountersSuite extends Assertions {
     assertArrayEquals(expectedCounts, actualCounts(3), 0.0001)
   }
   @Test def PottsModelFreqCounterShouldCountPairwiseFreqs() {
-    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, pseudoCount=0)
+    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, 0, pseudoCount=0)
 
     //This expectedCounts should hold true for all pairwise frequencies
     //                         a     b    c
@@ -84,7 +84,7 @@ class PottsModelCountersSuite extends Assertions {
     assertArrayEquals(expectedCounts, actualCounts(2, 3), 0.0001)
   }
   @Test def PottsModelFreqCounterShouldCountLocalFreqsWithPseudocount() {
-    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, pseudoCount=1)
+    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, 0, pseudoCount=1)
     //we now have 4 actual sequences (M) and 3 fake observations (domain.size*pseudoCount) for each element in the domain
     val expectedCounts = Array( 2.0 / 7, 2.0 / 7, 3.0 / 7)
     def actualCounts(i: Int): Array[Double] = { freqModel.localFamilies(i).weights.value.toArray }
@@ -95,7 +95,7 @@ class PottsModelCountersSuite extends Assertions {
 
   }
   @Test def PottsModelFreqCounterShouldCountPairwiseFreqsWithPseudocount() {
-    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, pseudoCount=1)
+    val freqModel = PottsModel.frequenciesAsWeights(msa.sequences, msa.domain, false, 0, pseudoCount=1)
 
     //The pseudocount does not mean that every possible pair is observed.
     //Instead we add pseudoCount/domain.size "oberservations" for each possible pair, and retain de denominator from above (4+3)
@@ -128,7 +128,7 @@ class MutualInformationSuite extends Assertions {
   val seq2 = Spin.makeSequence("aba", domain)
   val seq3 = Spin.makeSequence("bbb", domain)
   val msa = new MSA(List(seq0, seq1, seq2, seq3), Set((0, 2)), domain, "test")
-  val MIPredictor = new MutualInformationConnectionPredictor(msa, false)
+  val MIPredictor = new MutualInformationConnectionPredictor(msa, false, 0)
 
   @Test def MIShouldBeCorrect() {
     val expectedStrength02 =
