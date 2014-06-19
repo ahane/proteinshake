@@ -8,29 +8,39 @@ import eu.hanefeld.ba.Types.SpinValue
 import org.json4s.JsonDSL._
 import org.json4s.jackson.JsonMethods._
 import org.json4s.JsonAST.{JObject, JField, JString, JDouble}
+import cc.factorie.variable.DiffList
 
 /**
  * Created by alec on 6/10/14.
  */
-abstract class ConnectionPredictor(val msa: MSA, saveToFile: Boolean=true, fileext: String="pred1") {
+abstract class ConnectionPredictor(val msa: MSA, excludeNeighbours: Boolean=false, neighbourhood: Int=4) {
 
   def strengths: Map[(Int, Int), Double]
 
-  val positives: Set[(Int, Int)] = msa.connections
+  val positives: Set[(Int, Int)] =
+    if(excludeNeighbours) for(c <- msa.connections if(outsideOfNeighborhood(c._1, c._2, neighbourhood))) yield c
+    else msa.connections
+  val numPositives = positives.size
 
   def strengthsDescending: List[((Int, Int), Double)] = strengths.toList.sortBy(_._2).reverse
 
   def connectionsWithStrengthsOfAtLeast(threshold: Double): Set[(Int, Int)] = strengths.toList.filter(_._2 >= threshold).map(_._1).toSet
 
   def TPRate(upUntil: Int): Double = {
-    val numPositives = positives.size
     val until = if(upUntil > numPositives) numPositives else upUntil
     val predicted = strengthsDescending.slice(0, until).map(_._1).toSet
     val truePositives = positives intersect predicted
     val tpRate = truePositives.size.toDouble / numPositives
     tpRate
   }
-  def TPRate: Double = { TPRate(positives.size) }
+  def TPRate: Double = { TPRate(numPositives) }
+
+  private def outsideOfNeighborhood(i: Int, j: Int, neighborhood: Int): Boolean = {
+    val distance = j - i
+    val isOutside = distance > neighborhood
+    if(isOutside) { true }
+    else { false }
+  }
 
   def saveResultsToFile(nameext: String): Unit = {
     import scalax.io._
@@ -38,7 +48,6 @@ abstract class ConnectionPredictor(val msa: MSA, saveToFile: Boolean=true, filee
     out.write(getJson)
 
   }
-
   def getJson(): String = {
     val name = msa.name
     val numSites = msa.sequences(0).length
@@ -52,31 +61,69 @@ abstract class ConnectionPredictor(val msa: MSA, saveToFile: Boolean=true, filee
     return pretty(render(json))
   }
 
+
 }
 
 class ContrastiveDivergenceConnectionPredictor(
   msa: MSA,
+  excludeNeighbours: Boolean,
   potentialConnections: Set[(Int, Int)]=Set(),
   useLogFreqsAsLocalWeights: Boolean=true,
   numIterations: Int=3,
   learningRate: Double=1,
   l1: Double=0.01,
   l2: Double=0.000001,
+  k: Int=1,
   useParallelTrainer: Boolean=true,
-  opt: String="AdaGradRDA") extends ConnectionPredictor(msa) {
+  opt: String="AdaGradRDA") extends ConnectionPredictor(msa, excludeNeighbours) {
+
+  implicit val random = new scala.util.Random(0)
+
+  val useAllConnections = (potentialConnections.size == 0)
+  val model =
+    if(useAllConnections) PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbors=excludeNeighbours)
+    else PottsModel(msa,useLogFreqsAsLocalWeights, potentialConnections)
+
+  val sequences = msa.sequences
+  val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
+  val CDExamples = sequences.map(new ContrastiveDivergenceExampleVector(_, model, sampler, k))
+  val optimizer = new AdaGradRDA(rate = learningRate, l1 = l1, l2 = l2, numExamples = sequences.length)
+
+  Trainer.onlineTrain(model.parameters, CDExamples,
+    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations)
+
+  val frobeniusNorms = ConnectionStrengths(model)
+  def strengths = frobeniusNorms
+}
+
+
+
+
+//#####################################################
+class WeightedContrastiveDivergenceConnectionPredictor(
+  msa: MSA,
+  excludeNeighbours: Boolean,
+  potentialConnections: Set[(Int, Int)]=Set(),
+  useLogFreqsAsLocalWeights: Boolean=true,
+  numIterations: Int=3,
+  learningRate: Double=0.1,
+  l1: Double=0.01,
+  l2: Double=0.000001,
+  useParallelTrainer: Boolean=true,
+  opt: String="AdaGradRDA") extends ConnectionPredictor(msa, excludeNeighbours) {
 
   implicit val random = new scala.util.Random(0)
 
   val useAllConnections = (potentialConnections.size == 0)
   val model = if(useAllConnections) PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbors=true) else PottsModel(msa,useLogFreqsAsLocalWeights, potentialConnections)
 
-  val sequences = msa.sequences
+  val sequences = msa.reweightedSequences
   val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
-  val CDExamples = sequences.map(new ContrastiveDivergenceExampleVector(_, model, sampler))
+  val CDExamples = for((w, seq) <- sequences) yield new WeightedContrastiveDivergenceExampleVector(seq, w, model, sampler)
   val optimizer = new AdaGradRDA(rate=learningRate, l1 = l1, l2=l2, numExamples = msa.sequences.length)
 
   Trainer.onlineTrain(model.parameters, CDExamples,
-    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations)
+    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations, logEveryN=0)
 
   val frobeniusNorms = ConnectionStrengths(model)
   def strengths = frobeniusNorms
@@ -129,12 +176,24 @@ import cc.factorie.optimize.Example
 class ContrastiveDivergenceExampleVector[C](val contexts: Iterable[C], model: Model with Parameters, val sampler: Sampler[C], val k: Int = 1) extends Example {
   def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
     require(gradient != null, "The ContrastiveDivergenceExample needs a gradient accumulator")
-    //val proposalDiff = new DiffList
-    //repeat(k) { proposalDiff ++= sampler.process(context) }
-    val proposalDiff = sampler.processAll(contexts, returnDiffs=true)
+    val proposalDiff = new DiffList
+    for(i <- 0 until k) { proposalDiff ++= sampler.processAll(contexts, returnDiffs=true )}
+    //val proposalDiff = sampler.processAll(contexts, returnDiffs=true)
     model.factorsOfFamilyClass[DotFamily](proposalDiff).foreach(f => gradient.accumulate(f.family.weights, f.currentStatistics, -1.0))
     proposalDiff.undo()
     model.factorsOfFamilyClass[DotFamily](proposalDiff).foreach(f => gradient.accumulate(f.family.weights, f.currentStatistics))
+  }
+}
+
+class WeightedContrastiveDivergenceExampleVector[C](val contexts: Iterable[C], val weight: Double, model: Model with Parameters, val sampler: Sampler[C], val k: Int = 1) extends Example {
+  def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
+    require(gradient != null, "The ContrastiveDivergenceExample needs a gradient accumulator")
+    //val proposalDiff = new DiffList
+    //repeat(k) { proposalDiff ++= sampler.process(context) }
+    val proposalDiff = sampler.processAll(contexts, returnDiffs=true)
+    model.factorsOfFamilyClass[DotFamily](proposalDiff).foreach(f => gradient.accumulate(f.family.weights, f.currentStatistics, -1.0*weight))
+    proposalDiff.undo()
+    model.factorsOfFamilyClass[DotFamily](proposalDiff).foreach(f => gradient.accumulate(f.family.weights, f.currentStatistics, weight))
   }
 }
 

@@ -150,3 +150,6 @@ class MutualInformationSuite extends Assertions {
 
 }
 
+class FrobeniusNormSuite extends Assertions {
+
+}
