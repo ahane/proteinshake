@@ -31,7 +31,7 @@ import org.junit.Test
 import eu.hanefeld.ba.Types.SpinDomain
 
 import cc.factorie.variable.CategoricalDomain
-import eu.hanefeld.ba.{MututalInformationConnectionPredictor, PottsModel, MSA, Spin}
+import eu.hanefeld.ba.{MutualInformationConnectionPredictor, PottsModel, MSA, Spin}
 import cc.factorie.la.Tensor
 
 
@@ -128,7 +128,7 @@ class MutualInformationSuite extends Assertions {
   val seq2 = Spin.makeSequence("aba", domain)
   val seq3 = Spin.makeSequence("bbb", domain)
   val msa = new MSA(List(seq0, seq1, seq2, seq3), Set((0, 2)), domain, "test")
-  val MIPredictor = new MututalInformationConnectionPredictor(msa, false)
+  val MIPredictor = new MutualInformationConnectionPredictor(msa, false)
 
   @Test def MIShouldBeCorrect() {
     val expectedStrength02 =

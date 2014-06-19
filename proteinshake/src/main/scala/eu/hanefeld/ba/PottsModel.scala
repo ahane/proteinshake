@@ -109,18 +109,18 @@ object PottsModel {
     else PottsModel(numSites, msa.domain, possiblePairs)
   }
 
-  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, excludeNeighbors: Boolean, exclusionRange: Int=4): PottsModel = {
+  def apply(msa: MSA, useLogFreqsAsLocalWeights: Boolean, excludeNeighbors: Boolean, neighbourhood: Int): PottsModel = {
     val numSites = msa.sequences(0).length
-    val possiblePairs = generatePairs(numSites, excludeNeighbors, exclusionRange)
+    val possiblePairs = generatePairs(numSites, excludeNeighbors, neighbourhood)
     PottsModel(numSites, msa.domain, possiblePairs)
   }
 
 
 
-  private def generatePairs(numSites: Int, excludeNeighbors: Boolean, exclusionNeighborhood: Int): Set[(Int, Int)] = {
+  def generatePairs(numSites: Int, excludeNeighbors: Boolean, neighbourhood: Int): Set[(Int, Int)] = {
 
     def includePair(i: Int, j: Int): Boolean = {
-      (orderingIsValid(i, j) && (outsideOfNeighborhood(i, j, exclusionNeighborhood) || !excludeNeighbors))
+      (orderingIsValid(i, j) && (outsideOfNeighborhood(i, j, neighbourhood) || !excludeNeighbors))
     }
     def orderingIsValid(i: Int, j: Int): Boolean = { i < j }
 
@@ -165,11 +165,11 @@ object PottsModel {
   /* We here abuse the tensor/factor infrastructure to collect empirical frequencies from a dataset.
    * The "weights" of the this model are then used to estimate mutual information in the Experiment class.
    */
-  def frequenciesAsWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean, pseudoCount: Double=1.): PottsModel = {
+  def frequenciesAsWeights(samples: Seq[SpinSequence], domain: SpinDomain, excludeNeighbors: Boolean, neighbourhood: Int, pseudoCount: Double=1.): PottsModel = {
     assert(samples.forall(_.length == samples(0).length), "Samples must all be of same length.")
     val numSites = samples(0).length
     val numSamples = samples.toList.length
-    val model = PottsModel(numSites, domain, generatePairs(numSites, false, -1))
+    val model = PottsModel(numSites, domain, generatePairs(numSites, excludeNeighbors, neighbourhood))
 
     for ((key, family) <- model.pairwiseFamilies) {
       val weightTensor = model.parameters(family.weights)

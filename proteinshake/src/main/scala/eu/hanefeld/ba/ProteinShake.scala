@@ -15,34 +15,34 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
 
   def evaluateParameters(args: Array[String]): Double = {
     options.parse(args)
-    val msaFoldername = "data/" + options.dataPath.value
-    val msaFilename = options.msa.value
-    val tpRate = evaluateOneMSA(msaFoldername, msaFilename)
+
+    val filePath = options.filePath.value
+    val msa = ProteinShakeUtil.loadMSAFromFile(filePath)
+    val tpRate = evaluateOneMSA(msa)
     tpRate
   }
 
-  def evaluateOneMSA(foldername: String, filename: String): Double = {
+  def evaluateOneMSA(msa: MSA): Double = {
 
-    val path = foldername + filename
-    val json = parse(readFromFile(path))
-
-    implicit val formats = DefaultFormats //for the json reader
-    val msaJson = json.extract[MSAJson]
-    val msa = MSA(msaJson)
-    val MIpred = new MututalInformationConnectionPredictor(msa, true)
-    println("MI TP Rate: " + MIpred.TPRate.toString)
     val doMISubselection = options.miSubselect.value
-    //this threshold (0.26) comes from [Weigt08]
-    val topMIConnections: Set[(Int, Int)] = if(doMISubselection) MIpred.connectionsWithStrengthsOfAtLeast(0.26) else Set()
-    println("--learning CD model--")
+    val excludeNeighbours = options.excludeNeighbours.value
+    val neighbourhood = options.neighbourhood.value
 
+    val topMIConnections: Set[(Int, Int)] =
+      if(doMISubselection) {
+        ProteinShakeUtil.MIConnectionsOverThreshold(msa, excludeNeighbours, neighbourhood)
+      } else {
+        Set()
+      }
+
+    println("== Learning CD model ==")
     val l1 = options.l1.value
     val l2 = options.l2.value
     val lr = options.learningRate.value
     val iterations = options.numIterations.value
     val numSteps = options.cdSteps.value
     val useLogFreqs = options.useLogFreqs.value
-    println("with parameters: l1="+l1.toString+
+    println("   Parameters: l1="+l1.toString+
       ", l2="+l2.toString+
       ", lr="+lr.toString +
       ", numIter="+iterations.toString+", " +
@@ -50,32 +50,69 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
 
     val CDPred =
         new ContrastiveDivergenceConnectionPredictor(msa, potentialConnections=topMIConnections, l1=l1, l2=l2,
-          learningRate=lr, numIterations=iterations, k=numSteps, excludeNeighbours=true, useLogFreqs=useLogFreqs)
+          learningRate=lr, numIterations=iterations, k=numSteps, excludeNeighbours=excludeNeighbours,
+          neighbourhood=neighbourhood, useLogFreqs=useLogFreqs)
 
-    //val cdpred = new MututalInformationConnectionPredictor(msa, true)
-    println("TPRate: " + CDPred.TPRate.toString)
+    println("   TPRate: " + CDPred.TPRate.toString)
     CDPred.saveResultsToFile(l1.toString+"_"+iterations.toString+"_"+numSteps.toString)
     CDPred.TPRate
+  }
+
+
+}
+
+object ProteinShakeUtil {
+
+  var currentMSA: MSA = null
+  var currentFilepath: String = ""
+  def loadMSAFromFile(filepath: String): MSA = {
+    implicit val formats = DefaultFormats //for the json reader
+    if(filepath == currentFilepath) currentMSA
+    else {
+      val json = parse(readFromFile(filepath))
+      val msaJson = json.extract[MSAJson]
+      currentMSA = MSA(msaJson)
+      currentFilepath = filepath
+      currentMSA
+    }
   }
 
   private def readFromFile(filepath: String): String = {
     import scalax.io._
     try {
       val in: Input = Resource.fromFile(filepath)
-      return in.string
+      in.string
     }
     catch {
       case e: Exception => println("Failed to locate MSA data file");
-      return None.asInstanceOf[String]
+        None.asInstanceOf[String]
     }
 
   }
+
+  var MIPredictor: MutualInformationConnectionPredictor = null
+  def initSingletonMIPredictor(msa: MSA, excludeNeighbours: Boolean, neighbourhood: Int): MutualInformationConnectionPredictor = {
+    MIPredictor = new MutualInformationConnectionPredictor(msa, excludeNeighbours, neighbourhood)
+    MIPredictor
+  }
+
+  def MIConnectionsOverThreshold(msa: MSA, excludeNeighbours: Boolean, neighbourhood: Int, threshold: Double=0.26): Set[(Int, Int)] = {
+
+    val parametersDifferent = (MIPredictor.excludeNeighbours != excludeNeighbours) ||
+                              (MIPredictor.msa != msa) ||
+                              (MIPredictor.neighbourhood != neighbourhood)
+
+    if(MIPredictor == null || parametersDifferent) {
+      initSingletonMIPredictor(msa, excludeNeighbours, neighbourhood)
+    }
+    MIPredictor.connectionsWithStrengthsOfAtLeast(threshold)
+  }
+
 }
 
 trait ProteinShakeOptions extends CmdOptions {
   //
-  val dataPath = new CmdOption("msa-folder", "synth/", "STRING", "Path to MSA files")
-  val msa = new CmdOption("msa-file", "synth.json", "STRING", "Name of msa.json file that should be used.")
+  val filePath = new CmdOption("msa-file", "synth/synth.json", "FILENAME", "Name of msa.json file that should be used.")
 
   val numIterations = new CmdOption("iterations", 3, "INT", "Number of iterations of the SGD algorithm")
   val useNumIter = new CmdOption("use-iter", false, "BOOLEAN", "Set true if we want to vary the number of SGD iterations")
@@ -93,6 +130,8 @@ trait ProteinShakeOptions extends CmdOptions {
 
   val numTrails = new CmdOption("trails", 5, "INT", "Number of hyperparamter trails to run")
 
+  val excludeNeighbours = new CmdOption("exclude-neighbours", true, "BOOLEAN", "Set true if we want to ignore neighbouring sites")
+  val neighbourhood = new CmdOption("neighbourshood", 4, "INT", "Set the distance of sites whose connectiosn will be ignored")
   val miSubselect = new CmdOption("MI-subselection", true, "BOOLEAN", "Set true if we only want to send connections with a minimum MI to the CDPredictor")
   val useLogFreqs =  new CmdOption("--use-log-freqs", true, "BOOLEAN", "Set true if we want to initialize local weights with empirical log-frequencies")
 
@@ -122,6 +161,12 @@ object ProteinShakeOptimizer {
     if(options.useNumIter.value) optionsToSearch.append(iter)
     if(options.useCDSteps.value) optionsToSearch.append(k)
 
+    val path = options.filePath.value
+    val excludeNeighbours = options.excludeNeighbours.value
+    val neighbourhood = options.neighbourhood.value
+    val msa = ProteinShakeUtil.loadMSAFromFile(path)
+    val MIPred = ProteinShakeUtil.initSingletonMIPredictor(msa, excludeNeighbours, neighbourhood)
+    println("MI TP Rate: "+MIPred.TPRate.toString)
 
     val parameterSearcher = new HyperParameterSearcher(options, optionsToSearch, executor, numTrails, numToFinish)
     val optimalParameters = parameterSearcher.optimize()

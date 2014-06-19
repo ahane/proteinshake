@@ -16,15 +16,15 @@ import org.json4s.JsonAST.JDouble
 /**
  * Created by alec on 6/10/14.
  */
-abstract class ConnectionPredictor(val msa: MSA, excludeNeighbours: Boolean=false, neighbourhood: Int=4) {
+abstract class ConnectionPredictor(val msa: MSA, val excludeNeighbours: Boolean, val neighbourhood: Int) {
 
   def strengths: Map[(Int, Int), Double]
 
-  val positives: Set[(Int, Int)] =
-    if(excludeNeighbours) for(c <- msa.connections if(outsideOfNeighborhood(c._1, c._2, neighbourhood))) yield c
-    else msa.connections
+  val numSites = msa.sequences(0).length
+  val includedConnections = PottsModel.generatePairs(numSites, excludeNeighbours, neighbourhood)
+  val positives: Set[(Int, Int)] = includedConnections intersect msa.connections
   val numPositives = positives.size
-
+  
   def strengthsDescending: List[((Int, Int), Double)] = strengths.toList.sortBy(_._2).reverse
 
   def connectionsWithStrengthsOfAtLeast(threshold: Double): Set[(Int, Int)] = strengths.toList.filter(_._2 >= threshold).map(_._1).toSet
@@ -38,9 +38,9 @@ abstract class ConnectionPredictor(val msa: MSA, excludeNeighbours: Boolean=fals
   }
   def TPRate: Double = { TPRate(numPositives) }
 
-  private def outsideOfNeighborhood(i: Int, j: Int, neighborhood: Int): Boolean = {
+  private def outsideOfNeighbourhood(i: Int, j: Int, neighbourhood: Int): Boolean = {
     val distance = j - i
-    val isOutside = distance > neighborhood
+    val isOutside = distance > neighbourhood
     if(isOutside) { true }
     else { false }
   }
@@ -71,6 +71,7 @@ abstract class ConnectionPredictor(val msa: MSA, excludeNeighbours: Boolean=fals
 class ContrastiveDivergenceConnectionPredictor(
   msa: MSA,
   excludeNeighbours: Boolean,
+  neighbourhood: Int,
   potentialConnections: Set[(Int, Int)]=Set(),
   numIterations: Int=3,
   learningRate: Double=1,
@@ -78,19 +79,19 @@ class ContrastiveDivergenceConnectionPredictor(
   l2: Double=0.000001,
   k: Int=1,
   useParallelTrainer: Boolean=true,
-  useLogFreqs: Boolean=true) extends ConnectionPredictor(msa, excludeNeighbours) {
+  useLogFreqs: Boolean=true) extends ConnectionPredictor(msa, excludeNeighbours, neighbourhood) {
 
   implicit val random = new scala.util.Random(0)
 
   val useAllConnections = (potentialConnections.size == 0)
+
   val model =
-    if(useAllConnections) PottsModel(msa, useLogFreqs, excludeNeighbors=excludeNeighbours)
+    if(useAllConnections) PottsModel(msa, useLogFreqs, excludeNeighbours, neighbourhood)
     else PottsModel(msa, useLogFreqs, potentialConnections)
 
   val sequences = msa.sequences
   val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
   val CDExamples = sequences.map(new ContrastiveDivergenceExampleVector(_, model, sampler, k))
-
 
   def trainAdaGradRDA() = {
     val optimizer = new AdaGradRDA(rate = learningRate, l1 = l1, l2 = l2, numExamples = sequences.length)
@@ -100,68 +101,35 @@ class ContrastiveDivergenceConnectionPredictor(
     val trainer = new ParallelOnlineTrainer(parameters, optimizer=optimizer, maxIterations=numIterations)
     trainer.replaceTensorsWithLocks()
     try {
-      while (!trainer.isConverged) {
-        trainer.processExamples(CDExamples.shuffle)
-      }
+      while (!trainer.isConverged) trainer.processExamples(CDExamples.shuffle)
     } finally {
       trainer.removeLocks()
       optimizer.finalizeWeights(parameters)
     }
-
   }
-  //Trainer.onlineTrain(model.parameters, CDExamples,
-  //  optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations)
+
   trainAdaGradRDA()
-  val frobeniusNorms = ConnectionStrengths(model)
-  def strengths = frobeniusNorms
-}
-
-
-
-
-//#####################################################
-class WeightedContrastiveDivergenceConnectionPredictor(
-  msa: MSA,
-  excludeNeighbours: Boolean,
-  potentialConnections: Set[(Int, Int)]=Set(),
-  useLogFreqsAsLocalWeights: Boolean=true,
-  numIterations: Int=3,
-  learningRate: Double=0.1,
-  l1: Double=0.01,
-  l2: Double=0.000001,
-  useParallelTrainer: Boolean=true,
-  opt: String="AdaGradRDA") extends ConnectionPredictor(msa, excludeNeighbours) {
-
-  implicit val random = new scala.util.Random(0)
-
-  val useAllConnections = (potentialConnections.size == 0)
-  val model = if(useAllConnections) PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbors=true) else PottsModel(msa,useLogFreqsAsLocalWeights, potentialConnections)
-
-  val sequences = msa.reweightedSequences
-  val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
-  val CDExamples = for((w, seq) <- sequences) yield new WeightedContrastiveDivergenceExampleVector(seq, w, model, sampler)
-  val optimizer = new AdaGradRDA(rate=learningRate, l1 = l1, l2=l2, numExamples = msa.sequences.length)
-
-  Trainer.onlineTrain(model.parameters, CDExamples,
-    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations, logEveryN=0)
 
   val frobeniusNorms = ConnectionStrengths(model)
   def strengths = frobeniusNorms
+
 }
 
-class MututalInformationConnectionPredictor(msa: MSA, excludeNeighbors: Boolean) extends ConnectionPredictor(msa) {
+class MutualInformationConnectionPredictor(msa: MSA, excludeNeighbors: Boolean, neighbourhood:Int)
+  extends ConnectionPredictor(msa, excludeNeighbors, neighbourhood) {
 
   private val sequences = msa.sequences
   private val d = msa.domain
-  private val MIs = computeMIs
+  private val MIs = computeMIs()
 
-  private def computeMIs = {
-    val freqModel = PottsModel.frequenciesAsWeights(sequences, d, excludeNeighbors)
+  private def computeMIs() = {
+    val freqModel = PottsModel.frequenciesAsWeights(sequences, d, excludeNeighbors, neighbourhood)
 
     def localFreqs(i: Int) = freqModel.localFamilies(i).weights.value
     def pairwiseFreqs(i: Int, j: Int) = freqModel.pairwiseFamilies(i, j).weights.value
 
     def singleMI(i: Int, j: Int): Double = {
+
       def f_i(k: SpinValue) = localFreqs(i)(d.index(k))
       def f_j(k: SpinValue) = localFreqs(j)(d.index(k))
       def f_ij(k: SpinValue, l: SpinValue) = pairwiseFreqs(i, j)(d.index(k), d.index(l))
@@ -170,16 +138,15 @@ class MututalInformationConnectionPredictor(msa: MSA, excludeNeighbors: Boolean)
         val summand = f_ij(k, l) * math.log( f_ij(k, l) / ( f_i(k) * f_j(l) ))
         summand
       }
-
       val MI = (for(k <- d.categories; l <- d.categories) yield summand(k, l)).sum
       MI
     }
     val edges = freqModel.pairwiseFamilies.keys
     val allMIs: Map[(Int, Int), Double] = (for(edge <- edges) yield (edge, singleMI(edge._1, edge._2))).toMap
     allMIs
-}
+  }
 
-  def strengths = { MIs }
+  def strengths = MIs
     //we abuse the PottsModel infrastructure for convenient counting of pairwise and single-site frequencies
 
 }
@@ -205,7 +172,7 @@ class ContrastiveDivergenceExampleVector[C](val contexts: Iterable[C], model: Mo
   }
 }
 
-class WeightedContrastiveDivergenceExampleVector[C](val contexts: Iterable[C], val weight: Double, model: Model with Parameters, val sampler: Sampler[C], val k: Int = 1) extends Example {
+/*class WeightedContrastiveDivergenceExampleVector[C](val contexts: Iterable[C], val weight: Double, model: Model with Parameters, val sampler: Sampler[C], val k: Int = 1) extends Example {
   def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
     require(gradient != null, "The ContrastiveDivergenceExample needs a gradient accumulator")
     //val proposalDiff = new DiffList
@@ -215,11 +182,41 @@ class WeightedContrastiveDivergenceExampleVector[C](val contexts: Iterable[C], v
     proposalDiff.undo()
     model.factorsOfFamilyClass[DotFamily](proposalDiff).foreach(f => gradient.accumulate(f.family.weights, f.currentStatistics, weight))
   }
-}
+}*/
 
 
-object ConnectionPredictor {
-  //def apply(msa: MSA): ConnectionPredictor {
+//#####################################################
+/*class WeightedContrastiveDivergenceConnectionPredictor(
+  msa: MSA,
+  excludeNeighbours: Boolean,
+  neighbourhood: Int,
+  potentialConnections: Set[(Int, Int)]=Set(),
+  useLogFreqsAsLocalWeights: Boolean=true,
+  numIterations: Int=3,
+  learningRate: Double=0.1,
+  l1: Double=0.01,
+  l2: Double=0.000001,
+  useParallelTrainer: Boolean=true)
+  extends ConnectionPredictor(msa, excludeNeighbours, neighbourhood) {
 
+  implicit val random = new scala.util.Random(0)
 
-}
+  val useAllConnections = (potentialConnections.size == 0)
+  val model =
+    if(useAllConnections) {
+      PottsModel(msa, useLogFreqsAsLocalWeights, excludeNeighbours, neighbourhood)
+    } else {
+      PottsModel(msa,useLogFreqsAsLocalWeights, potentialConnections)
+    }
+
+  val sequences = msa.reweightedSequences
+  val sampler = new GibbsSampler(model).asInstanceOf[Sampler[Spin]]
+  val CDExamples = for((w, seq) <- sequences) yield new WeightedContrastiveDivergenceExampleVector(seq, w, model, sampler)
+  val optimizer = new AdaGradRDA(rate=learningRate, l1 = l1, l2=l2, numExamples = msa.sequences.length)
+
+  Trainer.onlineTrain(model.parameters, CDExamples,
+    optimizer = optimizer, useParallelTrainer = useParallelTrainer, maxIterations = numIterations, logEveryN=0)
+
+  val frobeniusNorms = ConnectionStrengths(model)
+  def strengths = frobeniusNorms
+}*/
