@@ -38,16 +38,9 @@ abstract class ConnectionPredictor(val msa: MSA, val excludeNeighbours: Boolean,
   }
   def TPRate: Double = { TPRate(numPositives) }
 
-  private def outsideOfNeighbourhood(i: Int, j: Int, neighbourhood: Int): Boolean = {
-    val distance = j - i
-    val isOutside = distance > neighbourhood
-    if(isOutside) { true }
-    else { false }
-  }
-
   def saveResultsToFile(nameext: String): Unit = {
     import scalax.io._
-    val out: Output = Resource.fromOutputStream(new java.io.FileOutputStream("pred/"+msa.name+"/"+ nameext + ".json"))
+    val out: Output = Resource.fromFile("pred/"+msa.name+"/"+ nameext + ".json")
     out.write(getJson)
 
   }
@@ -98,7 +91,8 @@ class ContrastiveDivergenceConnectionPredictor(
     val parameters = model.parameters
     parameters.keys.foreach(_.value) // make sure we initialize the values in a single thread
     optimizer.initializeWeights(parameters)
-    val trainer = new ParallelOnlineTrainer(parameters, optimizer=optimizer, maxIterations=numIterations)
+
+    val trainer = new ParallelOnlineTrainer(parameters, optimizer=optimizer, maxIterations=numIterations, logEveryN=0)
     trainer.replaceTensorsWithLocks()
     try {
       while (!trainer.isConverged) trainer.processExamples(CDExamples.shuffle)
@@ -114,6 +108,7 @@ class ContrastiveDivergenceConnectionPredictor(
   def strengths = frobeniusNorms
 
 }
+
 
 class MutualInformationConnectionPredictor(msa: MSA, excludeNeighbors: Boolean, neighbourhood:Int)
   extends ConnectionPredictor(msa, excludeNeighbors, neighbourhood) {

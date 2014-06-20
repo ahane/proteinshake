@@ -24,12 +24,14 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
   def evaluateOneMSA(msa: MSA): Double = {
 
     val doMISubselection = options.miSubselect.value
+    val MIThreshold = options.miThreshold.value
     val excludeNeighbours = options.excludeNeighbours.value
     val neighbourhood = options.neighbourhood.value
 
+
     val topMIConnections: Set[(Int, Int)] =
       if(doMISubselection) {
-        ProteinShakeUtil.MIConnectionsOverThreshold(msa, excludeNeighbours, neighbourhood)
+        ProteinShakeUtil.MIConnectionsOverThreshold(msa, excludeNeighbours, neighbourhood, threshold=MIThreshold)
       } else {
         Set()
       }
@@ -42,6 +44,7 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
     val numSteps = options.cdSteps.value
     val useLogFreqs = options.useLogFreqs.value
 
+
     println("== Learning CD model ==")
     println("   Parameters: l1="+l1.toString+
       ", l2="+l2.toString+
@@ -49,13 +52,19 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
       ", numIter="+iterations.toString+", " +
       "k="+numSteps.toString)
 
+    if(doMISubselection){
+      val allEdges = PottsModel.generatePairs(msa.sequences(0).length, excludeNeighbours, neighbourhood)
+      val check = allEdges intersect topMIConnections
+      println("   MI subselection passed "+topMIConnections.size+"/"+allEdges.size+" connections to CDPredictor")
+    }
+
     val CDPred =
         new ContrastiveDivergenceConnectionPredictor(msa, potentialConnections=topMIConnections, l1=l1, l2=l2,
           learningRate=lr, numIterations=iterations, k=numSteps, excludeNeighbours=excludeNeighbours,
           neighbourhood=neighbourhood, useLogFreqs=useLogFreqs)
 
     println("   TPRate: " + CDPred.TPRate.toString)
-    CDPred.saveResultsToFile(l1.toString+"_"+iterations.toString+"_"+numSteps.toString)
+    CDPred.saveResultsToFile(math.log(l1).toString+"_"+iterations.toString+"_"+numSteps.toString)
     CDPred.TPRate
   }
 
@@ -95,6 +104,7 @@ object ProteinShakeUtil {
   var MIPredictor: MutualInformationConnectionPredictor = null
   def initSingletonMIPredictor(msa: MSA, excludeNeighbours: Boolean, neighbourhood: Int): MutualInformationConnectionPredictor = {
     MIPredictor = new MutualInformationConnectionPredictor(msa, excludeNeighbours, neighbourhood)
+    MIPredictor.saveResultsToFile("MI")
     MIPredictor
   }
 
@@ -117,10 +127,10 @@ trait ProteinShakeOptions extends CmdOptions with DefaultCmdOptions{
   val filePath = new CmdOption("msa-file", "data/synth/synth.json", "FILENAME", "Name of msa.json file that should be used.")
 
   val numIterations = new CmdOption("iterations", 3, "INT", "Number of iterations of the SGD algorithm")
-  val useNumIter = new CmdOption("use-iter", false, "BOOLEAN", "Set true if we want to vary the number of SGD iterations")
+  val useNumIter = new CmdOption("tune-iter", false, "BOOLEAN", "Set true if we want to vary the number of SGD iterations")
 
-  val cdSteps = new CmdOption("cdsteps", 3, "INT", "Number of steps the CD sampler should take")
-  val useCDSteps = new CmdOption("use-cdsteps", false, "BOOLEAN", "Set true if we want to vary the number of sampling steps CD takes")
+  val cdSteps = new CmdOption("cdsteps", 1, "INT", "Number of steps the CD sampler should take")
+  val useCDSteps = new CmdOption("tune-cdsteps", false, "BOOLEAN", "Set true if we want to vary the number of sampling steps CD takes")
 
 
   val l1 = new CmdOption("l1", 0.0, "DOUBLE", "regularization rate l1")
@@ -136,8 +146,12 @@ trait ProteinShakeOptions extends CmdOptions with DefaultCmdOptions{
 
   val excludeNeighbours = new CmdOption("exclude-neighbours", true, "BOOLEAN", "Set true if we want to ignore neighbouring sites")
   val neighbourhood = new CmdOption("neighbourshood", 4, "INT", "Set the distance of sites whose connectiosn will be ignored")
-  val miSubselect = new CmdOption("MI-subselection", true, "BOOLEAN", "Set true if we only want to send connections with a minimum MI to the CDPredictor")
-  val useLogFreqs =  new CmdOption("--use-log-freqs", true, "BOOLEAN", "Set true if we want to initialize local weights with empirical log-frequencies")
+
+
+  val miSubselect = new CmdOption("mi-subselection", true, "BOOLEAN", "Set true if we only want to send connections with a minimum MI to the CDPredictor")
+  val miThreshold = new CmdOption("mi-threshold", 0.2, "DOUBLE", "Minimum MI a connection should have to qualify for the CD predictor")
+
+  val useLogFreqs =  new CmdOption("use-log-freqs", true, "BOOLEAN", "Set true if we want to initialize local weights with empirical log-frequencies")
 
 }
 
@@ -191,5 +205,3 @@ object ProteinShakeOptimizer {
     f
   }
 }
-
-import concurrent.ExecutionContext.
