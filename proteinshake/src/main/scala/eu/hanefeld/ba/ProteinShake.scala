@@ -43,14 +43,15 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
     val iterations = options.numIterations.value
     val numSteps = options.cdSteps.value
     val useLogFreqs = options.useLogFreqs.value
-
+    val delta = options.delta.value
 
     println("== Learning CD model ==")
     println("   Parameters: l1="+l1.toString+
       ", l2="+l2.toString+
       ", lr="+lr.toString +
-      ", numIter="+iterations.toString+", " +
-      "k="+numSteps.toString)
+      ", numIter="+iterations.toString +
+      ", k="+numSteps.toString +
+      "delta="+numSteps.toString)
 
     if(doMISubselection){
       val allEdges = PottsModel.generatePairs(msa.sequences(0).length, excludeNeighbours, neighbourhood)
@@ -60,11 +61,11 @@ class ProteinShakeTrainer extends cc.factorie.util.HyperparameterMain{
 
     val CDPred =
         new ContrastiveDivergenceConnectionPredictor(msa, potentialConnections=topMIConnections, l1=l1, l2=l2,
-          learningRate=lr, numIterations=iterations, k=numSteps, excludeNeighbours=excludeNeighbours,
+          learningRate=lr, numIterations=iterations, k=numSteps, delta=delta, excludeNeighbours=excludeNeighbours,
           neighbourhood=neighbourhood, useLogFreqs=useLogFreqs)
 
     println("   TPRate: " + CDPred.TPRate.toString)
-    CDPred.saveResultsToFile(math.log(l1).toString+"_"+iterations.toString+"_"+numSteps.toString)
+    CDPred.saveResultsToFile(l1.toString.replace('.', '_')+lr.toString.replace('.', '_')+"_"+iterations.toString+"_"+numSteps.toString)
     CDPred.TPRate
   }
 
@@ -138,6 +139,8 @@ trait ProteinShakeOptions extends CmdOptions with DefaultCmdOptions{
   val useL1 = new CmdOption("tune-l1", false, "BOOLEAN", "Set if l1 regularization should be used")
   val useL2 = new CmdOption("tune-l2", false, "BOOLEAN", "Set if l2 regularization should be used")
 
+  val delta = new CmdOption("delta", 0.1, "DOUBLE", "A large value of delta slows the rate at which the learning rates go down initially")
+  val useDelta = new CmdOption("tune-delta", false, "BOOLEAN", "Set true if we want tune the learning rate decay")
 
   val learningRate = new CmdOption("learning-rate", 0.9, "DOUBLE", "Learning rate")
   val useLearningRate = new CmdOption("tune-lr", false, "BOOLEAN", "Set if learning rate should be tuned")
@@ -149,7 +152,7 @@ trait ProteinShakeOptions extends CmdOptions with DefaultCmdOptions{
 
 
   val miSubselect = new CmdOption("mi-subselection", true, "BOOLEAN", "Set true if we only want to send connections with a minimum MI to the CDPredictor")
-  val miThreshold = new CmdOption("mi-threshold", 0.2, "DOUBLE", "Minimum MI a connection should have to qualify for the CD predictor")
+  val miThreshold = new CmdOption("mi-threshold", 0.1, "DOUBLE", "Minimum MI a connection should have to qualify for the CD predictor")
 
   val useLogFreqs =  new CmdOption("use-log-freqs", true, "BOOLEAN", "Set true if we want to initialize local weights with empirical log-frequencies")
 
@@ -167,6 +170,7 @@ object ProteinShakeOptimizer {
     val l2  = cc.factorie.util.HyperParameter(options.l2, new LogUniformDoubleSampler(1e-12, 1))
     val lr  = cc.factorie.util.HyperParameter(options.learningRate, new LogUniformDoubleSampler(1e-3, 10))
     val k  = cc.factorie.util.HyperParameter(options.cdSteps, new SampleFromSeq(Seq(1, 2, 3, 5, 10)))
+    val delta  = cc.factorie.util.HyperParameter(options.delta, new LogUniformDoubleSampler(1e-3, 1))
 
 
     //Why doesn't this find options.numTrails???
@@ -179,6 +183,7 @@ object ProteinShakeOptimizer {
     if(options.useL2.value) optionsToSearch.append(l2)
     if(options.useNumIter.value) optionsToSearch.append(iter)
     if(options.useCDSteps.value) optionsToSearch.append(k)
+    if(options.useDelta.value) optionsToSearch.append(delta)
 
     val path = options.filePath.value
     val excludeNeighbours = options.excludeNeighbours.value
@@ -186,6 +191,12 @@ object ProteinShakeOptimizer {
     val msa = ProteinShakeUtil.loadMSAFromFile(path)
     val MIPred = ProteinShakeUtil.initSingletonMIPredictor(msa, excludeNeighbours, neighbourhood)
     println("MI TP Rate: "+MIPred.TPRate.toString)
+
+    val MIThreshold = options.miThreshold.value
+    val topMI = MIPred.connectionsWithStrengthsOfAtLeast(MIThreshold)
+    val tpRatePassedOn = MIPred.TPRate(topMI.size)
+    println("MI TP Rate, of the ones passed to CD: " + tpRatePassedOn)
+
 
     val parameterSearcher = new HyperParameterSearcher(options, optionsToSearch, executor, numTrails, numToFinish)
     val optimalParameters = parameterSearcher.optimize()

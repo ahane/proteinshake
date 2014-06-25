@@ -40,7 +40,9 @@ abstract class ConnectionPredictor(val msa: MSA, val excludeNeighbours: Boolean,
 
   def saveResultsToFile(nameext: String): Unit = {
     import scalax.io._
-    val out: Output = Resource.fromFile("pred/"+msa.name+"/"+ nameext + ".json")
+    //val out: Output = Resource.fromFile("pred/"+msa.name+"/"+ nameext + ".json")
+    val out:Output = Resource.fromOutputStream(new java.io.FileOutputStream("pred/"+msa.name+"/"+ nameext + ".json"))
+
     out.write(getJson)
 
   }
@@ -52,7 +54,7 @@ abstract class ConnectionPredictor(val msa: MSA, val excludeNeighbours: Boolean,
     val predictionsJson = (for((key, strength) <- predictionsMapStrings.toList) yield JObject(JField(key, JDouble(strength)) :: Nil)).toList
     val json = (
         ("name" -> name) ~
-        ("postivives" -> connectionsStrings) ~
+        ("positives" -> connectionsStrings) ~
         ("predictions" -> predictionsJson) ~
         ("tp-rate" -> TPRate))
     return pretty(render(json))
@@ -71,6 +73,7 @@ class ContrastiveDivergenceConnectionPredictor(
   l1: Double=0.01,
   l2: Double=0.000001,
   k: Int=1,
+  delta: Double=0.1,
   useParallelTrainer: Boolean=true,
   useLogFreqs: Boolean=true) extends ConnectionPredictor(msa, excludeNeighbours, neighbourhood) {
 
@@ -87,7 +90,7 @@ class ContrastiveDivergenceConnectionPredictor(
   val CDExamples = sequences.map(new ContrastiveDivergenceExampleVector(_, model, sampler, k))
 
   def trainAdaGradRDA() = {
-    val optimizer = new AdaGradRDA(rate = learningRate, l1 = l1, l2 = l2, numExamples = sequences.length)
+    val optimizer = new AdaGradRDA(delta = delta, rate = learningRate, l1 = l1, l2 = l2, numExamples = sequences.length)
     val parameters = model.parameters
     parameters.keys.foreach(_.value) // make sure we initialize the values in a single thread
     optimizer.initializeWeights(parameters)
